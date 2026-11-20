@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover,user-scalable=no">
-<title>瓦割り（仮）</title>
+<title>割りすぎ瓦割り</title>
 <style>
 *{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
 html,body{margin:0;height:100%;overflow:hidden;background:#d9c196;
@@ -52,7 +52,7 @@ body{display:flex;align-items:center;justify-content:center}
   display:flex;flex-direction:column;align-items:center;gap:2.6cqw}
 #title .t2{font-size:19cqw;font-weight:900;line-height:1.1;color:#fff;white-space:nowrap;
   -webkit-text-stroke:1.6cqw #5a2a14;paint-order:stroke fill;text-shadow:0 1.4cqw 0 #5a2a14,0 2.2cqw 3cqw #0004}
-#title .t2 small{font-size:8cqw;letter-spacing:0;margin-left:1cqw;-webkit-text-stroke-width:1cqw}
+#title .t2 .t2a{display:block;font-size:10cqw;letter-spacing:.6cqw;line-height:1.2;-webkit-text-stroke-width:1.1cqw}
 #title .t3{font-size:5.2cqw;font-weight:bold;color:#5a2a14;background:#fffd;border-radius:3cqw;padding:1cqw 4cqw}
 #title .t4{position:absolute;left:0;right:0;bottom:14cqw;text-align:center}
 #title .t4 span{display:inline-block;font-size:6.4cqw;font-weight:bold;color:#fff;background:#d2382f;border-radius:6cqw;
@@ -117,7 +117,7 @@ body{display:flex;align-items:center;justify-content:center}
   <div id="cap"></div>
   <div id="title">
     <div class="tt">
-      <div class="t2"><span class="nb">瓦割り</span><small class="nb">（仮）</small></div>
+      <div class="t2"><span class="t2a nb">割りすぎ</span><span class="nb">瓦割り</span></div>
       <div class="t3"><span class="nb">5秒で</span> <span class="nb">どこまで</span> <span class="nb">割れる？</span></div>
     </div>
     <div class="t4"><span>はじめる</span></div>
@@ -354,10 +354,10 @@ const seenCount = rec => rec.seen.reduce((a, b) => a + (b ? 1 : 0), 0);
 function shareText(stage, count) {
   const nm = stageLabel(stage);
   let body;
-  if (stage >= 8) body = '瓦割り（仮）で「' + rankFor(stage) + '」になりました。「' + nm + '」まで割った（連打 ' + count + ' 回）';
-  else if (stage >= 7) body = '瓦割り（仮）で「破門」されました。' + nm + 'を作った（連打 ' + count + ' 回）';
-  else if (stage === 0) body = '瓦割り（仮）で「出直し」と言われた……（連打 ' + count + ' 回）';
-  else body = '瓦割り（仮）で「' + rankFor(stage) + '」に認定！「' + nm + '」まで届いた（連打 ' + count + ' 回）';
+  if (stage >= 8) body = '割りすぎ瓦割りで「' + rankFor(stage) + '」になりました。「' + nm + '」まで割った（連打 ' + count + ' 回）';
+  else if (stage >= 7) body = '割りすぎ瓦割りで「破門」されました。' + nm + 'を作った（連打 ' + count + ' 回）';
+  else if (stage === 0) body = '割りすぎ瓦割りで「出直し」と言われた……（連打 ' + count + ' 回）';
+  else body = '割りすぎ瓦割りで「' + rankFor(stage) + '」に認定！「' + nm + '」まで届いた（連打 ' + count + ' 回）';
   return body + ' #瓦割り';
 }
 // スマホ（タッチ端末）は Web Share API、PC は X の投稿画面

@@ -76,10 +76,10 @@ const seenCount = rec => rec.seen.reduce((a, b) => a + (b ? 1 : 0), 0);
 function shareText(stage, count) {
   const nm = stageLabel(stage);
   let body;
-  if (stage >= 8) body = '瓦割り（仮）で「' + rankFor(stage) + '」になりました。「' + nm + '」まで割った（連打 ' + count + ' 回）';
-  else if (stage >= 7) body = '瓦割り（仮）で「破門」されました。' + nm + 'を作った（連打 ' + count + ' 回）';
-  else if (stage === 0) body = '瓦割り（仮）で「出直し」と言われた……（連打 ' + count + ' 回）';
-  else body = '瓦割り（仮）で「' + rankFor(stage) + '」に認定！「' + nm + '」まで届いた（連打 ' + count + ' 回）';
+  if (stage >= 8) body = '割りすぎ瓦割りで「' + rankFor(stage) + '」になりました。「' + nm + '」まで割った（連打 ' + count + ' 回）';
+  else if (stage >= 7) body = '割りすぎ瓦割りで「破門」されました。' + nm + 'を作った（連打 ' + count + ' 回）';
+  else if (stage === 0) body = '割りすぎ瓦割りで「出直し」と言われた……（連打 ' + count + ' 回）';
+  else body = '割りすぎ瓦割りで「' + rankFor(stage) + '」に認定！「' + nm + '」まで届いた（連打 ' + count + ' 回）';
   return body + ' #瓦割り';
 }
 // スマホ（タッチ端末）は Web Share API、PC は X の投稿画面
