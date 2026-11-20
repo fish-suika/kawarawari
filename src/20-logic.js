@@ -1,7 +1,7 @@
 // ===== ゲームのロジック（画面を使わない）=====
 const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
 
-// 連打数 → 段階（0〜7）
+// 連打数 → 段階（0〜10）
 function stageFor(count) {
   let s = 0;
   for (let i = 0; i < CFG.levelAt.length; i++) if (count >= CFG.levelAt[i]) s = i + 1;
@@ -18,13 +18,13 @@ function acceptKey(e) {
 
 const Game = {
   mode: 'title',   // title → ready → play → finish（せいっ）→ show（破壊の見せ場）→ over（結果）
-  t: 0, readyT: 0, finT: 0, showT: 0, overT: 0, show: null,
+  t: 0, readyT: 0, finT: 0, showT: 0, showR: 0, overT: 0, show: null,   // showT：見せ場の時刻（見せ場の単位）／showR：見せ場が始まってからの実際の秒数
   count: 0, hits: [],      // hits: 数えた時刻（直近1秒の窓の判定に使う）
   events: [],
 
   reset() {
     this.mode = 'title';
-    this.t = 0; this.readyT = 0; this.finT = 0; this.showT = 0; this.overT = 0; this.show = null;
+    this.t = 0; this.readyT = 0; this.finT = 0; this.showT = 0; this.showR = 0; this.overT = 0; this.show = null;
     this.count = 0; this.hits = [];
     this.events = [];
   },
@@ -42,12 +42,12 @@ const Game = {
   startShow() {
     const st = this.stage();
     this.show = buildShow(st, CFG.seed + this.count);
-    this.mode = 'show'; this.showT = 0;
+    this.mode = 'show'; this.showT = 0; this.showR = 0;
     this.events.push({ type: 'show', stage: st });
   },
   // タップで早送り：見せ場の最初の skipGrace 秒は受け付けない。結果へ直ちに移る
   skip() {
-    if (this.mode !== 'show' || this.showT < CFG.skipGrace) return false;
+    if (this.mode !== 'show' || this.showR < CFG.skipGrace) return false;
     this.showT = this.show.dur; this.mode = 'over'; this.overT = 0;
     this.events.push({ type: 'over', skipped: true });
     return true;
@@ -87,7 +87,8 @@ const Game = {
       return;
     }
     if (this.mode === 'show') {
-      this.showT += dt;
+      this.showR += dt;
+      this.showT = Math.min(this.show.dur, this.showR * this.show.speed);
       if (this.showT >= this.show.dur - 1e-9) { this.showT = this.show.dur; this.mode = 'over'; this.overT = 0; this.events.push({ type: 'over' }); }
       return;
     }

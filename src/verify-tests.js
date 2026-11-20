@@ -41,11 +41,12 @@
   const LV = CFG.levelAt, TOP = LV[LV.length - 1];
   const cases = [[0, 0]];
   LV.forEach((v, i) => { cases.push([v - 1, i], [v, i + 1]); });
-  cases.push([TOP + 1, 7], [TOP * 3, 7]);
+  const NS = CFG.stageNames.length, LAST = NS - 1, ALLS = Array.from({ length: NS }, (_, i) => i);
+  cases.push([TOP + 1, LAST], [TOP * 3, LAST]);
   const bad = cases.filter(([n, s]) => stageFor(n) !== s).map(([n, s]) => n + '→' + stageFor(n) + '(want ' + s + ')');
-  check('連打数ごとの段階（' + (LV[0] - 1) + '→0, ' + LV[0] + '→1, …, ' + (TOP - 1) + '→6, ' + TOP + '→7）', bad.length === 0, bad.join(' ') || cases.map(([n]) => n + '→' + stageFor(n)).join(' '));
-  check('段階は 0〜7 の 8 段階（しきい値 7 つ・昇順）', LV.length === 7 && CFG.stageNames.length === 8 && LV.every((v, i) => i === 0 || v > LV[i - 1]));
-  check('オーラの段は段階と同じ区切り（' + CFG.tierEvery + ' 回ごと）で 1 つ上がる', CFG.tierEvery === LV[0] && LV.every((v, i) => tierFor(v - 1) === i && tierFor(v) === i + 1) && tierFor(TOP * 3) === 7);
+  check('連打数ごとの段階（' + (LV[0] - 1) + '→0, ' + LV[0] + '→1, …, ' + (TOP - 1) + '→' + (LAST - 1) + ', ' + TOP + '→' + LAST + '）', bad.length === 0, bad.join(' ') || cases.map(([n]) => n + '→' + stageFor(n)).join(' '));
+  check('段階は 0〜10 の 11 段階（しきい値 10 個・6 回ごと・昇順）。毎秒 12 回 × 5 秒 = 60 回が最上段', LV.length === 10 && NS === 11 && LV.every((v, i) => v === 6 * (i + 1)) && TOP === 12 * CFG.duration);
+  check('オーラの段は段階と同じ区切り（' + CFG.tierEvery + ' 回ごと）で 1 つ上がる', CFG.tierEvery === LV[0] && LV.every((v, i) => tierFor(v - 1) === i && tierFor(v) === i + 1) && tierFor(TOP * 3) === CFG.maxTier && CFG.maxTier === 10);
 
   // --- 流れ ---
   Game.reset();
@@ -125,14 +126,15 @@
 
   // --- ボットが届く段階 ---
   note('--- 一定の速さのボット（5 秒）---');
-  // 毎秒 4→20 回→段階 3、6→30 回→段階 5、8→40 回→段階 6、10→50 回→段階 7
-  const RATES = [4, 6, 8, 10];
-  const want = { 4: stageFor(20), 6: stageFor(30), 8: stageFor(40), 10: stageFor(50) };
+  // 毎秒 4→20 回→段階 3、6→30 回→段階 5、8→40 回→段階 6、10→50 回→段階 8、12→60 回→段階 10（CFG.levelAt から導く）
+  const RATES = [4, 6, 8, 10, 12];
+  const want = { 4: stageFor(20), 6: stageFor(30), 8: stageFor(40), 10: stageFor(50), 12: stageFor(60) };
   const botRes = {};
   for (const rate of RATES) {
     const b = bot(rate); botRes[rate] = b;
     check('毎秒 ' + rate + ' 回 × 5 秒 → ' + b.count + ' 回 → 段階 ' + b.stage + '（' + CFG.stageNames[b.stage] + '）', b.stage === want[rate], '想定 段階' + want[rate]);
   }
+  check('毎秒 12 回（両手の全力）× 5 秒 = 60 回 → 最上段（段階 10）、毎秒 10 回は段階 8', botRes[12].count === 60 && botRes[12].stage === LAST && botRes[10].stage === 8, 'count=' + botRes[12].count);
   note('ボット一覧：' + RATES.map(r => '毎秒' + r + '回=' + botRes[r].count + '回/段階' + botRes[r].stage).join('、'));
 
   // ===== Phase 2：破壊の見せ場 =====
@@ -148,13 +150,13 @@
     return { stage, sh, mode: Game.mode };
   }
   const counts = [0].concat(CFG.levelAt), lens = [];   // 各段階になる最低の連打数
-  for (let st = 0; st < 8; st++) {
+  for (let st = 0; st < NS; st++) {
     const r = runShow(counts[st]); lens.push(r.sh);
     check('段階 ' + st + ' の見せ場は ' + r.sh.toFixed(2) + ' 秒で結果へ（上限 ' + CFG.showMax + ' 秒）', r.stage === st && r.mode === 'over' && r.sh <= CFG.showMax + 0.02 && Math.abs(r.sh - CFG.showSecs[st]) < 0.02, 'stage=' + r.stage + ' mode=' + r.mode);
   }
-  let mono = true; for (let i = 1; i < 8; i++) if (!(lens[i] > lens[i - 1])) mono = false;
+  let mono = true; for (let i = 1; i < NS; i++) if (!(lens[i] > lens[i - 1])) mono = false;
   check('見せ場は段階が高いほど長い（単調増加）', mono, lens.map(v => v.toFixed(2)).join(' < '));
-  check('段階 0〜1 はすぐ結果へ（1.5 秒以内）、最高段階も約 4 秒以内', lens[0] <= 1.5 && lens[1] <= 1.5 && lens[7] <= 4.02);
+  check('段階 0〜1 はすぐ結果へ（1.5 秒以内）、段階 7 までは今のまま（1.0〜4.0 秒）、段階 8〜10 は 4.5・4.8・5.0 秒で最長約 5 秒', lens[0] <= 1.5 && lens[1] <= 1.5 && [1.0, 1.2, 1.5, 2.1, 2.7, 3.2, 3.6, 4.0].every((v, i) => Math.abs(lens[i] - v) < 0.02) && lens[8] <= 4.52 && lens[9] <= 4.82 && lens[10] <= 5.02 && CFG.showMax === 5.0, lens.map(v => v.toFixed(2)).join(' '));
 
   // 早送り
   startPlay(); Game.count = TOP; advance(CFG.duration + 0.01);
@@ -166,12 +168,12 @@
   const sk = Game.skip();
   check('早送り入力で直ちに結果へ移る（見せ場の途中から）', sk === true && Game.mode === 'over' && Game.overT === 0 && tBefore < durBefore, 'showT=' + tBefore.toFixed(2));
   advance(CFG.retryWait + 0.01);
-  check('早送りのあと 0.5 秒で再挑戦でき、連打数・段階は変わらない', Game.canRetry() && Game.count === TOP && Game.stage() === 7);
+  check('早送りのあと 0.5 秒で再挑戦でき、連打数・段階は変わらない', Game.canRetry() && Game.count === TOP && Game.stage() === LAST);
   check('見せ場でない間の早送りは何もしない', Game.skip() === false);
 
   // 破片の数・再現性
   let maxPieces = 0, maxBroken = 0;
-  for (let st = 0; st < 8; st++) {
+  for (let st = 0; st < NS; st++) {
     const s = buildShow(st, CFG.seed + counts[st]);
     maxPieces = Math.max(maxPieces, s.pieces.length);
     maxBroken = Math.max(maxBroken, s.pieces.filter(p => isFinite(p.tb)).length);
@@ -181,7 +183,7 @@
   check('同じシードなら同じ壊れ方（再現できる）', sig(buildShow(7, 12345)) === sig(buildShow(7, 12345)));
   check('シードが違えば飛び方が変わる', sig(buildShow(7, 12345)) !== sig(buildShow(7, 54321)));
   let badN = 0;
-  for (let st = 0; st < 8; st++) {
+  for (let st = 0; st < NS; st++) {
     const s = buildShow(st, 99);
     for (const t of [0, 0.5, 1, 2, 3, 4, 6]) for (const p of s.pieces) { const o = poseAt(p, t, { x: 0, y: 0, a: 0, al: 1, s: 1 }); if (![o.x, o.y, o.a, o.al, o.s].every(Number.isFinite)) badN++; }
   }
@@ -189,7 +191,7 @@
 
   // 段階ごとに壊れる範囲がはっきり違う
   const groups = st => { const s = buildShow(st, 7), g = {}; for (const p of s.pieces) if (isFinite(p.tb) && p.g !== 'puff') g[p.g] = (g[p.g] || 0) + 1; return g; };
-  const G = [0, 1, 2, 3, 4, 5, 6, 7].map(groups), keys = g => Object.keys(g).sort().join(','), sum = g => Object.values(g).reduce((a, b) => a + b, 0);
+  const G = ALLS.map(groups), keys = g => Object.keys(g).sort().join(','), sum = g => Object.values(g).reduce((a, b) => a + b, 0);
   check('段階 0：何も割れない（ひびだけ）', Object.keys(G[0]).length === 0);
   check('段階 1：瓦が数枚だけ（5 枚 = 15 片）、段階 2：瓦が全部（20 枚 = 60 片）', G[1].tile === 15 && keys(G[1]) === 'tile' && G[2].tile === 60 && keys(G[2]) === 'tile', keys(G[1]) + ' / ' + keys(G[2]));
   check('段階 3：台と床が加わる', G[3].stand === 2 && G[3].slab > 0 && !G[3].dojo, keys(G[3]));
@@ -197,24 +199,24 @@
   check('段階 5：家と電柱が加わる（家 6 軒・電柱 4 本）', G[5].house === 12 && G[5].pole === 4 && !G[5].mountain, keys(G[5]));
   check('段階 6：裏山が割れる', G[6].mountain === 2 && G[6].rock > 0 && !G[6].dirt, keys(G[6]));
   check('段階 7：地面（クレーター）が加わる', G[7].dirt > 50, keys(G[7]));
-  check('壊れる破片の数が段階ごとに増える', [1, 2, 3, 4, 5, 6, 7].every(i => sum(G[i]) > sum(G[i - 1])), G.map(sum).join(' < '));
+  check('壊れる破片の数が段階ごとに増える（段階 1〜7）。段階 8〜10 は破片を足さず、大陸・地球を絵と動きで見せる', [1, 2, 3, 4, 5, 6, 7].every(i => sum(G[i]) > sum(G[i - 1])) && [8, 9, 10].every(i => sum(G[i]) === sum(G[7])), G.map(sum).join(' < '));
   const area = i => CAMS[i].w * CAMS[i].h;
-  check('カメラが段階ごとに一段引く（範囲が必ず広がる）', [3, 4, 5, 6, 7].every(i => area(i) > area(i - 1)));
-  const cams = [0, 1, 2, 3, 4, 5, 6, 7].map(st => camAt(st, CFG.showSecs[st]));
+  check('カメラが段階ごとに一段引く（範囲が必ず広がる。段階 10 は段階 9 の宇宙のまま）', [3, 4, 5, 6, 7, 8, 9].every(i => area(i) > area(i - 1)) && area(10) >= area(9));
+  const cams = ALLS.map(st => camAt(st, showDur(st)));
   check('見せ場の終わりのカメラが段階の設定どおり', cams.every((c, i) => Math.abs(c.w - CAMS[i].w) < 0.01 && Math.abs(c.cy - CAMS[i].cy) < 0.01));
   const midc = camAt(7, CFG.camAt[7] + CFG.camDur[7] / 2);
   check('カメラは連続して動く（引いている途中は前後の中間）', midc.w > CAMS[6].w && midc.w < CAMS[7].w);
 
   // 画面の縦横比ごとに、引いたカメラが必要な範囲を覆う（はみ出さない）
-  const asp = [[390, 844], [375, 667], [360, 800], [768, 1024], [844, 390], [1024, 768], [1280, 720], [1920, 1080], [2560, 1080], [600, 1200]];
+  const asp = [[390, 844], [375, 667], [360, 800], [768, 1024], [844, 390], [1024, 768], [1280, 720], [1920, 1080], [2560, 1080], [600, 1200], [1950, 1135]];
   const off = [];
-  for (const [w, h] of asp) for (let st = 0; st < 8; st++) {
+  for (const [w, h] of asp) for (let st = 0; st < NS; st++) {
     const v = viewFor(CAMS[st], w, h), e = EXTENT[st];
     if (!(v.x0 <= e.x0 && v.x1 >= e.x1 && v.y0 <= e.y0 && v.y1 >= e.y1)) off.push(w + 'x' + h + ' 段階' + st);
   }
-  check('縦・横・PC の 10 種類の画面で、どの段階も必要な範囲が画面に入る', off.length === 0, off.join(', ') || asp.length + ' 種類 × 8 段階');
+  check('縦・横・PC の ' + asp.length + ' 種類の画面で、どの段階も必要な範囲が画面に入る（段階 8 は地平線と割れ目、段階 9〜10 は地球と月・星）', off.length === 0, off.join(', ') || asp.length + ' 種類 × ' + NS + ' 段階');
   check('クレーター：足場の柱は残り、まわりは深く掘れる', craterTop(PX, 1) === BY && craterTop(CR.x + 100, 1) > BY + 100 && craterTop(CR.x + CR.R + 20, 1) === GY && craterTop(CR.x + 100, 0) === GY);
-  check('大きな文字は段階ごとに用意（段階 7 は 6 つ：瓦、全部〜クレーター）', buildShow(7, 1).caps.length === 6 && buildShow(0, 1).caps.length === 1 && buildShow(1, 1).caps.length === 1);
+  check('大きな文字は段階ごとに用意（段階 7 は 6 つ：瓦、全部〜クレーター）', buildShow(7, 1).caps.length === 6 && buildShow(0, 1).caps.length === 1 && buildShow(1, 1).caps.length === 1 && buildShow(8, 1).caps.length === 7 && buildShow(9, 1).caps.length === 8 && buildShow(10, 1).caps.length === 9 && buildShow(10, 1).caps.slice(-3).map(c => c.text).join('|') === '大陸、真っ二つ|地球に、ひび|地球、真っ二つ');
 
   // --- 連打の反応（イベント）---
   startPlay();
@@ -227,24 +229,24 @@
   // ===== Phase 3：段位認定証・記録・共有・人の反応 =====
   note('--- Phase 3：段位認定証・記録・共有・反応 ---');
   // 段位の割り当て（0〜7）
-  const wantRanks = ['出直し', '初段', '二段', '三段', '四段', '五段', '名誉師範', '破門'];
-  check('段位は段階 0〜7 に 1 つずつ（出直し→初段→…→名誉師範→破門）', RANKS.length === 8 && wantRanks.every((r, i) => rankFor(i) === r) && new Set(RANKS).size === 8, RANKS.join('→'));
-  check('段階 7 だけ「破門状」、それ以外は「段位認定証」', certTitle(7) === '破門状' && [0, 1, 2, 3, 4, 5, 6].every(i => certTitle(i) === '段位認定証'));
-  check('連打数から結果の段位まで通る（20→三段、42 以上→破門）', RANKS[stageFor(20)] === '三段' && RANKS[stageFor(42)] === '破門' && RANKS[stageFor(0)] === '出直し');
-  check('届いた段階の名前は 8 つ全部ちがう（空白なしの文章用も）', new Set(CFG.stageNames).size === 8 && new Set(CFG.stageNames.map((_, i) => stageLabel(i))).size === 8 && !stageLabel(6).includes(' '), stageLabel(6));
-  check('認定文（師範のひとこと）が 8 つあり、文節に区切ってある', VERDICTS.length === 8 && VERDICTS.every(v => v.length >= 2 && v.every(p => p.length > 0)) && VERDICTS[7].join('').includes('破門'));
+  const wantRanks = ['出直し', '初段', '二段', '三段', '四段', '五段', '名誉師範', '破門', '永久破門', '地球出禁', '宇宙破門'];
+  check('段位は段階 0〜10 に 1 つずつ（出直し→初段→…→名誉師範→破門→永久破門→地球出禁→宇宙破門）', RANKS.length === NS && wantRanks.every((r, i) => rankFor(i) === r) && new Set(RANKS).size === NS, RANKS.join('→'));
+  check('段階 7 以上は「破門状」、それ以外は「段位認定証」', [7, 8, 9, 10].every(i => certTitle(i) === '破門状') && [0, 1, 2, 3, 4, 5, 6].every(i => certTitle(i) === '段位認定証'));
+  check('連打数から結果の段位まで通る（20→三段、42→破門、48→永久破門、54→地球出禁、60→宇宙破門）', RANKS[stageFor(20)] === '三段' && RANKS[stageFor(42)] === '破門' && RANKS[stageFor(48)] === '永久破門' && RANKS[stageFor(54)] === '地球出禁' && RANKS[stageFor(60)] === '宇宙破門' && RANKS[stageFor(0)] === '出直し');
+  check('届いた段階の名前は 11 個全部ちがう（空白なしの文章用も）', new Set(CFG.stageNames).size === NS && new Set(CFG.stageNames.map((_, i) => stageLabel(i))).size === NS && !stageLabel(6).includes(' '), stageLabel(6));
+  check('認定文（師範のひとこと）が 11 あり、文節に区切ってある', VERDICTS.length === NS && VERDICTS[8].join('').includes('永久') && VERDICTS[9].join('').includes('禁') && VERDICTS[10].join('').includes('宇宙') && VERDICTS.every(v => v.length >= 2 && v.every(p => p.length > 0)) && VERDICTS[7].join('').includes('破門'));
 
   // 瓦の枚数表示
   check('瓦の枚数：段階 0 は 0 枚、段階 1 は 5 枚、段階 2 以上は「20 枚（と、その他）」',
-    tileText(0) === '0 枚' && tileText(1) === '5 枚' && [2, 3, 4, 5, 6, 7].every(i => tileText(i) === '20 枚（と、その他）'), [0, 1, 2, 7].map(tileText).join(' / '));
+    tileText(0) === '0 枚' && tileText(1) === '5 枚' && [2, 3, 4, 5, 6, 7, 8, 9, 10].every(i => tileText(i) === '20 枚（と、その他）'), [0, 1, 2, 10].map(tileText).join(' / '));
   const brokenTiles = st => buildShow(st, 5).pieces.filter(p => p.g === 'tile' && isFinite(p.tb)).length / 3;
   check('表示する瓦の枚数が、見せ場で実際に割れる枚数と同じ（0 / 5 / 20 枚）', brokenTiles(0) === tilesBroken(0) && brokenTiles(1) === tilesBroken(1) && brokenTiles(2) === tilesBroken(2) && tilesBroken(2) === CFG.tiles, [0, 1, 2].map(brokenTiles).join('/'));
 
   // 見た段階の記録
   check('見た段階：段階 0・1 はその段階だけ、段階 2 以上は 2〜届いた段階まで',
-    JSON.stringify(seenFor(0)) === '[0]' && JSON.stringify(seenFor(1)) === '[1]' && JSON.stringify(seenFor(2)) === '[2]' && JSON.stringify(seenFor(5)) === '[2,3,4,5]' && JSON.stringify(seenFor(7)) === '[2,3,4,5,6,7]');
+    JSON.stringify(seenFor(0)) === '[0]' && JSON.stringify(seenFor(1)) === '[1]' && JSON.stringify(seenFor(2)) === '[2]' && JSON.stringify(seenFor(5)) === '[2,3,4,5]' && JSON.stringify(seenFor(7)) === '[2,3,4,5,6,7]' && JSON.stringify(seenFor(10)) === '[2,3,4,5,6,7,8,9,10]');
   let rec = emptyRec(), r1 = applyResult(rec, 5, 30);
-  check('初めての挑戦：見た段階と自己ベストが入る（「更新」は出さない）', r1.first && !r1.newStage && !r1.newCount && JSON.stringify(r1.rec.seen) === '[0,0,1,1,1,1,0,0]' && r1.rec.bestStage === 5 && r1.rec.bestCount === 30 && r1.rec.plays === 1, JSON.stringify(r1.rec));
+  check('初めての挑戦：見た段階と自己ベストが入る（「更新」は出さない）', r1.first && !r1.newStage && !r1.newCount && JSON.stringify(r1.rec.seen) === '[0,0,1,1,1,1,0,0,0,0,0]' && r1.rec.bestStage === 5 && r1.rec.bestCount === 30 && r1.rec.plays === 1, JSON.stringify(r1.rec));
   check('元の記録は書き換えない（純粋な関数）', JSON.stringify(rec) === JSON.stringify(emptyRec()));
   rec = r1.rec; const r2 = applyResult(rec, 3, 31);
   check('2 回目：連打数だけ更新（最高段階は 5 のまま）・新しく見た段階はなし', !r2.first && r2.newCount && !r2.newStage && r2.rec.bestStage === 5 && r2.rec.bestCount === 31 && r2.newSeen.length === 0, JSON.stringify(r2));
@@ -264,8 +266,15 @@
   check('保存が使えない（読み書きで例外・null）ときも例外を出さず、空の記録で動く', !thrown && JSON.stringify(got1) === JSON.stringify(emptyRec()) && got2 === false && JSON.stringify(got3) === JSON.stringify(emptyRec()) && got4 === false);
   const junk = ['{', 'null', '123', '"x"', '[]', '{"seen":"a","bestStage":99,"bestCount":-5,"plays":"x"}'];
   let junkOk = true;
-  for (const j of junk) { try { const rr0 = loadRec({ getItem: () => j }); if (!(rr0.seen.length === 8 && rr0.bestStage >= -1 && rr0.bestStage <= 7 && rr0.bestCount >= 0 && rr0.plays >= 0)) junkOk = false; } catch (_) { junkOk = false; } }
+  for (const j of junk) { try { const rr0 = loadRec({ getItem: () => j }); if (!(rr0.seen.length === NS && rr0.bestStage >= -1 && rr0.bestStage <= LAST && rr0.bestCount >= 0 && rr0.plays >= 0)) junkOk = false; } catch (_) { junkOk = false; } }
   check('壊れた保存データ（6 種類）でも安全な記録になる', junkOk);
+  // 古い保存データ（8 段階分）が残っていても壊れず、続きから遊べる
+  const old8 = '{"seen":[0,0,1,1,1,1,1,1],"bestStage":7,"bestCount":45,"plays":4}', ro = loadRec({ getItem: () => old8 });
+  check('古い保存データ（8 段階分）を読める：見た段階 8 つはそのまま、新しい 3 段階は未見、自己ベストも残る', ro.seen.length === NS && JSON.stringify(ro.seen) === '[0,0,1,1,1,1,1,1,0,0,0]' && ro.bestStage === 7 && ro.bestCount === 45 && ro.plays === 4, JSON.stringify(ro.seen));
+  const roN = applyResult(ro, 10, 60);
+  check('古いデータのまま段階 10 に届くと、段階 8・9・10 を新しく見る・最高段階が 10 になる（更新の表示つき）', roN.newStage && roN.newCount && roN.rec.bestStage === 10 && roN.rec.bestCount === 60 && JSON.stringify(roN.newSeen) === '[8,9,10]' && seenCount(roN.rec) === 9, JSON.stringify(roN.newSeen));
+  const bad11 = loadRec({ getItem: () => '{"seen":[1,1,1,1,1,1,1,1,1,1,1,1,1,1],"bestStage":11,"bestCount":9,"plays":1}' });
+  check('段階が範囲外の保存データ（段階 11・14 個の配列）でも 11 段階に収まる', bad11.seen.length === NS && bad11.bestStage === -1 && seenCount(bad11) === NS);
   let denied = true;
   try {
     const d = Object.getOwnPropertyDescriptor(window, 'localStorage');
@@ -278,10 +287,10 @@
   check('localStorage への参照そのものが例外でも、読み書きは例外を出さない', denied);
 
   // 共有文
-  const shareOk = [0, 1, 2, 3, 4, 5, 6, 7].every(st => { const t = shareText(st, 37 + st); return t.includes(stageLabel(st)) || st === 0; });
-  const texts = [0, 1, 2, 3, 4, 5, 6, 7].map(st => shareText(st, 37 + st));
-  check('共有文：段階の名前と連打数と #瓦割り が入る（段階 1〜7）', [1, 2, 3, 4, 5, 6, 7].every(st => texts[st].includes('「' + stageLabel(st) + '」') || (st === 7 && texts[st].includes(stageLabel(7)))) && texts.every((t, i) => t.includes('連打 ' + (37 + i) + ' 回') && t.includes('#瓦割り')) && shareOk, texts[5]);
-  check('共有文：段位が入る（段階 1〜6 は「五段」など、段階 7 は破門、段階 0 は出直し）', [1, 2, 3, 4, 5, 6].every(st => texts[st].includes('「' + rankFor(st) + '」')) && texts[7].includes('破門') && texts[0].includes('出直し'));
+  const shareOk = ALLS.every(st => { const t = shareText(st, 37 + st); return t.includes(stageLabel(st)) || st === 0; });
+  const texts = ALLS.map(st => shareText(st, 37 + st));
+  check('共有文：段階の名前と連打数と #瓦割り が入る（段階 1〜10）', [1, 2, 3, 4, 5, 6, 7, 8, 9, 10].every(st => texts[st].includes('「' + stageLabel(st) + '」') || (st === 7 && texts[st].includes(stageLabel(7)))) && texts.every((t, i) => t.includes('連打 ' + (37 + i) + ' 回') && t.includes('#瓦割り')) && shareOk, texts[5]);
+  check('共有文：段位が入る（段階 1〜6 は「五段」など、段階 7 は破門、8〜10 は永久破門・地球出禁・宇宙破門、段階 0 は出直し）', [1, 2, 3, 4, 5, 6].every(st => texts[st].includes('「' + rankFor(st) + '」')) && texts[7].includes('破門') && texts[0].includes('出直し') && [8, 9, 10].every(st => texts[st].includes('「' + rankFor(st) + '」')));
   check('共有文は短い（URL を足しても 140 字以内）', texts.every(t => t.length + 1 + 23 <= 140), texts.map(t => t.length).join(','));
   check('共有の URL と X の投稿画面の組み立て', CFG.shareUrl === 'https://fish-suika.github.io/kawarawari/' && tweetUrl(texts[5], CFG.shareUrl).startsWith('https://twitter.com/intent/tweet?text=') && tweetUrl(texts[5], CFG.shareUrl).includes(encodeURIComponent(CFG.shareUrl)));
   check('スマホは Web Share API、PC は X の投稿画面（端末の判定）',
@@ -291,9 +300,9 @@
   // 人の反応（段階ごと）
   const posAt = (S, t) => CAST.map((a, i) => castPose(a, i, S, t, { x: 0, pose: '', dir: 1, kneel: false, ph: 0 })).map(o => Object.assign({}, o));
   const poses = (S, t) => posAt(S, t).map(o => o.pose);
-  const ids = new Set(CAST.map(a => a.id).concat(RESIDENTS.map((_, i) => 'r' + i)));
+  const ids = new Set(CAST.map(a => a.id).concat(RESIDENTS.map((_, i) => 'r' + i), ['moon', 'star'], FOLK.map((_, i) => 'f' + i)));
   let bubOk = true, bubLast = true;
-  for (let st = 0; st < 8; st++) {
+  for (let st = 0; st < NS; st++) {
     const sh = buildShow(st, 3), bs = sh.bubbles;
     for (const b of bs) if (!ids.has(b.who) || !(b.t0 < b.t1) || b.t0 >= sh.dur) bubOk = false;
     const spots = bs.map(b => bubbleSpot(b.who, st, Math.min(b.t0 + 0.01, sh.dur)));
@@ -305,37 +314,85 @@
   check('段階 0：師範「……次」／段階 1：まばらな拍手／段階 2：どよめき', bt(0).includes('……次') && bt(1).includes('パチ') && bt(2).includes('おお'), bt(0) + ' / ' + bt(1) + ' / ' + bt(2));
   check('段階 4：屋根が飛び見上げる／段階 5：住人の声／段階 6：山／段階 7：最後に「……破門」が残る',
     bt(4).includes('屋根') && bt(5).includes('うちが') && bt(6).includes('山') && bt(7).includes('……破門') && buildShow(7, 3).bubbles.slice(-1)[0].text === '……破門' && buildShow(7, 3).bubbles.slice(-1)[0].t1 === Infinity);
+  check('段階 8：「大陸が……！」／段階 9：月と星が「ひび……！？」「ひえっ！」／段階 10：月「地球が……！？」と万歳の声が最後に残る', bt(8).includes('大陸が') && bt(9).includes('ひ、ひび') && bt(9).includes('ひえっ') && bt(10).includes('地球が') && bt(10).includes('ばんざーい') && [8, 9, 10].every(st => buildShow(st, 3).bubbles.slice(-1)[0].t1 === Infinity) && !bt(7).includes('大陸'), bt(10));
   check('段階 0 は悶える：師範は腕組み、門下生は目をそらす／段階 1 は一部が拍手／段階 2 は全員が驚く',
     poses(0, 0.8)[0] === 'fold' && poses(0, 0.8).slice(1).every(p => p === 'wince') && [0.5, 0.7, 0.95, 1.1, 1.3, 1.5].some(t => poses(1, t).includes('clap')) && poses(2, 1.0).every(p => p === 'gasp'), poses(1, 0.7).join());
   const xs = (S, t) => posAt(S, t).map(o => o.x);
   check('段階 3 以上：床が抜ける前に、門下生と師範は穴の範囲（x が ' + HX0 + ' より右）の外へ出る', [3, 4, 5, 6, 7].every(S => xs(S, 0.94).every(x => x < HX0)), xs(3, 0.94).map(v => v.toFixed(0)).join(','));
   check('段階 4 以上：道場から外へ逃げて立ち止まり、見上げる', [4, 5, 6, 7].every(S => poses(S, 1.8).slice(1).every(p => p === 'look')) && xs(4, 1.9).every((x, i) => Math.abs(x - fleeX(i)) < 0.01), xs(4, 1.9).map(v => v.toFixed(0)).join(','));
-  check('段階 5 以上：その後さらに遠くへ走り去り、住人のいる高台より先で画面の外', xs(5, CFG.showSecs[5]).every(x => x < -340) && xs(7, CFG.showSecs[7]).every(x => x < -340), xs(7, CFG.showSecs[7]).map(v => v.toFixed(0)).join(','));
+  check('段階 5 以上：その後さらに遠くへ走り去り、住人のいる高台より先で画面の外', [5, 6, 7, 8, 9, 10].every(S => xs(S, showDur(S)).every(x => x < -340)), xs(7, showDur(7)).map(v => v.toFixed(0)).join(','));
   // 崩れた物が人の上に落ちない（人は落下範囲の外）
   const landX = p => (p.kind === 'tilt' ? p.px : p.x + p.vx * (isFinite(p.tl) ? p.tl : 0));
   const hw = p => { let m = 0; for (let i = 0; i < p.poly.length; i += 2) m = Math.max(m, Math.abs(p.poly[i])); return m; };
   let minDebris = 1e9;
-  for (let st = 4; st <= 7; st++) for (const p of buildShow(st, 2000 + st).pieces) if (p.g === 'dojo' && isFinite(p.tb)) minDebris = Math.min(minDebris, landX(p) - hw(p));
+  for (let st = 4; st <= 10; st++) for (const p of buildShow(st, 2000 + st).pieces) if (p.g === 'dojo' && isFinite(p.tb)) minDebris = Math.min(minDebris, landX(p) - hw(p));
   const stopX = Math.max(...CAST.map((_, i) => fleeX(i)));
   check('道場の破片は、逃げた人が立つ場所（x=' + stopX + ' より左）に落ちない', minDebris > stopX + 8, '破片の左端 最小 ' + minDebris.toFixed(1));
   // 倒れる家の高さより、住人の立つ高台が高い
   const houseSpan = Math.max(...buildShow(5, 1).pieces.filter(p => p.g === 'house').map(p => p.poly[2] - p.poly[0]));
   check('住人の高台は、倒れた家（横になった高さ ' + houseSpan.toFixed(0) + '）より高く、住人は家の倒れる側に立たない', GY - HILL_TOP >= houseSpan + 2 && RESIDENTS.every(r => r.x < HILLS[0].x + 30 && r.x > HILLS[0].x - 30 || r.x < HILLS[1].x + 30 && r.x > HILLS[1].x - 30));
-  check('見せ場の音の合図はすべて見せ場の間に鳴る', [0, 1, 2, 3, 4, 5, 6, 7].every(st => { const sh = buildShow(st, 3); return sh.cues.every(c => c.t >= 0 && c.t <= sh.dur + 1e-9); }));
+  check('見せ場の音の合図はすべて見せ場の間に鳴る（段階 8〜10 の地響き・静けさ・割れる音を含む）', ALLS.every(st => { const sh = buildShow(st, 3); return sh.cues.every(c => c.t >= 0 && c.t <= sh.dur + 1e-9); }));
 
   // 認定証の置き場所と、本人（足もと）がかぶらない配置
   const scr = [[390, 844], [375, 667], [360, 640], [412, 915], [768, 1024], [600, 1200], [844, 390], [1024, 768], [1280, 720], [1920, 1080], [2560, 1080]];
   const hid = [];
-  for (const [w, h] of scr) for (let st = 0; st < 8; st++) {
-    const cam = camAt(st, CFG.showSecs[st]), box = certBox(w, h, 1.2), sft = resultShift(st, cam, w, h, box), v = viewFor(cam, w, h);
-    const fy = st >= 3 ? BY : GY, foot = h / 2 + (resultBottom(st) - cam.cy) * v.k + sft.y, head = h / 2 + (fy - 64 - cam.cy) * v.k + sft.y, sx = w / 2 + ((st >= 3 ? KX + 1 : 62) - cam.cx) * v.k + sft.x;
-    if (box.portrait) { if (!(foot <= box.y - 4 || head < 28) || head < 20) hid.push(w + 'x' + h + ' 段階' + st + '（足 ' + foot.toFixed(0) + ' / 認定証の上端 ' + box.y.toFixed(0) + '）'); }
-    else if (!(sx + 28 * v.k <= box.x - 4 || sx <= box.x * 0.5 + 1)) hid.push(w + 'x' + h + ' 段階' + st);
+  for (const [w, h] of scr) for (let st = 0; st < NS; st++) {
+    const cam = camAt(st, showDur(st)), box = certBox(w, h, 1.5), sft = resultShift(st, cam, w, h, box), v = viewFor(cam, w, h), kk = v.k * sft.z;
+    const bot = st >= 8 ? BY + 7 : resultBottom(st);   // 段階 8 以上は本人の足もと（柱の上）が認定証にかぶらないこと
+    const foot = h / 2 + (bot - cam.cy) * kk + sft.y, head = h / 2 + (resultTop(st) - cam.cy) * kk + sft.y, sx = w / 2 + ((st >= 3 ? KX + 1 : 62) - cam.cx) * kk + sft.x;
+    if (box.portrait) { if (!(st >= 8 ? foot <= box.y - 4 : ((foot <= box.y - 4 || head < 28) && head >= 20))) hid.push(w + 'x' + h + ' 段階' + st + '（足 ' + foot.toFixed(0) + ' / 認定証の上端 ' + box.y.toFixed(0) + '）'); }
+    else if (!(sx + 28 * kk <= box.x - 4 || sx <= box.x * 0.5 + 1)) hid.push(w + 'x' + h + ' 段階' + st);
+    if (st >= 9) {   // 地球ぜんぶが、認定証にかぶらず画面に入る
+      const top = h / 2 + (GY - cam.cy) * kk + sft.y, bottom = h / 2 + (GY + 2 * PR - cam.cy) * kk + sft.y;
+      if (box.portrait ? (top < 0 || bottom > box.y - 2 || sx - PR * kk < 0 || sx + PR * kk > w) : (top < 0 || bottom > h || sx - PR * kk < 0 || sx + PR * kk > box.x - 2)) hid.push(w + 'x' + h + ' 段階' + st + '（地球がはみ出す）');
+    }
     if (box.x < 0 || box.y < 0 || box.x + box.w > w + 0.5 || box.y + box.h > h + 0.5) hid.push(w + 'x' + h + ' 認定証が画面の外');
   }
-  check('11 種類の画面 × 8 段階で、認定証が画面内に収まり、本人の足もとにかぶらない（絵をずらして）', hid.length === 0, hid.slice(0, 4).join(' / ') || scr.length + ' 種類 × 8 段階');
+  check(scr.length + ' 種類の画面 × 11 段階で、認定証（一覧が 3 行になる高さ）が画面内に収まり、本人の足もとにかぶらず、段階 9〜10 は地球ぜんぶが入る（絵をずらし・縮めて）', hid.length === 0, hid.slice(0, 4).join(' / ') || scr.length + ' 種類 × 11 段階');
   const bp = certBox(390, 844, 1.2), bl = certBox(1280, 720, 1.2);
   check('認定証：縦画面は下に寄せ（画面の 6 割まで）、横画面・PC は右側', bp.portrait && bp.y + bp.h <= 844 && bp.h <= 844 * 0.6 + 1 && bp.y > 844 * 0.38 && !bl.portrait && bl.x > 1280 / 2 && bl.h <= 720);
+
+  // ===== 最終修正（2026-11-20）：段階 8〜10（宇宙へ）と、崩れた物の不具合 =====
+  note('--- 最終修正：段階 8〜10（宇宙へ）・破片の不具合 ---');
+  const spN = [8, 9, 10].map(st => spaceAt(st, showDur(st)));
+  check('段階 8：最後は地平線が丸く見え（地面の丸み 1）、大陸が左右に開いている。まだ地球の外見には切り替わらない', spN[0].eps > 0.999 && spN[0].ang > ANG0 * 0.99 && spN[0].glb === 0 && spN[0].world === 1 && spN[0].crack === 1, JSON.stringify(spN[0]));
+  check('段階 9：最後は宇宙から見た地球（外見 1）で、ひびが全体に広がり、町や山は見えない・割れ目は細く閉じている', spN[1].glb > 0.999 && spN[1].ecr > 0.999 && spN[1].world < 0.001 && spN[1].ang < ANG0 * 0.2 && spN[1].sp === 0, JSON.stringify(spN[1]));
+  check('段階 10：最後は地球が割れて離れ（離れる 1）、中身が見える（外見はほぼ 0）。段階 9 までは離れない', spN[2].sp > 0.999 && spN[2].glb < 0.001 && spaceAt(9, showDur(9)).sp === 0 && spaceAt(7, 3.5).eps === 0);
+  let epsMono = true, pe = 0; for (let t = 0; t <= showDur(10); t += 0.05) { const e = spaceAt(10, t).eps; if (e < pe - 1e-9) epsMono = false; pe = e; }
+  check('カメラが引くにつれて地面が丸くなる（地面の丸みは引くほど増える）。段階 7 までは平ら（0）', epsMono && [0, 1, 2, 3, 4, 5, 6, 7].every(st => spaceAt(st, showDur(st)).eps === 0), 'eps(3.0)=' + spaceAt(10, 3.0).eps.toFixed(2));
+  const L = xfPoint(spN[2], -1, PX - 100, GY), Rg = xfPoint(spN[2], 1, PX + 100, GY);
+  check('段階 10：地球の左の半分は左へ、右の半分は右へ離れる（足場の柱は動かない）', L.x < PX - 100 - SPLITD * 0.9 && Rg.x > PX + 100 + SPLITD * 0.9 && Math.abs(halfXf(NOSP, -1).dx) === 0, L.x.toFixed(0) + ' / ' + Rg.x.toFixed(0));
+  check('足場の柱は引くほど画面で細くならない幅にする（平らなときは ' + PW + '、宇宙では広がる）', pillarW(0.5, 0) === PW && pillarW(0.03, 1) > PW * 5 && pillarW(0.6, 0.04) === PW);
+  check('穴の縁・足場の柱の幅を変えても、クレーターの形は保たれる（柱の上は穴の外の高さ BY）', craterTop(PX, 1, 200) === BY && craterTop(PX + 90, 1, 200) === BY && craterTop(PX + 150, 1, 200) > BY + 50 && craterTop(PX + 150, 1) > BY + 50 && craterTop(CR.x + CR.R + 20, 1, 200) === GY);
+  const zs = [[390, 844], [375, 667], [1280, 720], [1950, 1135], [1024, 768], [844, 390]].map(([w, h]) => { const b = certBox(w, h, 1.5); return [9, 10].map(st => resultShift(st, camAt(st, showDur(st)), w, h, b).z); });
+  check('認定証の横・上の空きに地球が入らないときだけ、絵を縮める（段階 9〜10 は 1 以下、段階 8 以下は縮めない）', zs.every(r => r.every(z => z > 0.3 && z <= 1)) && [3, 7, 8].every(st => resultShift(st, camAt(st, showDur(st)), 390, 844, certBox(390, 844, 1.5)).z === 1), JSON.stringify(zs));
+
+  // 崩れた物（屋根・壁・柱・床板・台）が、本人の足もとに縦に立ったり重なったりしない
+  const ZC0 = KX + 8, ZR0 = 36;
+  let zoneBad = [], tallBad = [], roofMax = 0, pillarBad = 0, angBad = 0, nBig = 0;
+  for (let st = 3; st <= 10; st++) for (const sd of [11, 222, 3333, 44444]) {
+    const sh = buildShow(st, sd + st);
+    for (const p of sh.pieces) {
+      if (!isFinite(p.tb) || !(p.g === 'dojo' || p.g === 'slab' || p.g === 'stand') || !isFinite(p.tl)) continue;
+      nBig++;
+      const xl = p.x + p.vx * (p.tl + 0.06);
+      if (Math.abs(xl - ZC0) < ZR0 + p.ex - 0.5) zoneBad.push('段階' + st + ' ' + p.g + ' 着地 x=' + xl.toFixed(0) + ' 半幅' + p.ex.toFixed(0));
+      if (p.edge === '#8a3a2a') roofMax = Math.max(roofMax, p.hh * 2);
+      if (2 * p.hh > 40.5) tallBad.push('段階' + st + ' ' + p.g + ' 高さ' + (2 * p.hh).toFixed(0));
+      if (st === 7 && xl > PX - PW / 2 - 4 - p.ex && xl < PX + PW / 2 + 4 + p.ex) pillarBad++;
+      const o = poseAt(p, sh.dur + 3, { x: 0, y: 0, a: 0, al: 1, s: 1 });   // 結果のあと（着地して落ち着いた姿勢）
+      if (p.lie ? Math.abs(Math.cos(o.a)) > 0.02 : Math.abs(Math.sin(o.a)) > 0.02) angBad++;
+    }
+  }
+  check('段階 3〜10 のどの見せ場でも、崩れた物は本人の足もと（x=' + ZC0 + ' の左右 ' + ZR0 + '＋物の幅）に着地しない', zoneBad.length === 0 && nBig > 500, zoneBad.slice(0, 3).join(' / ') || '対象 ' + nBig + ' 個');
+  check('崩れた物は着地して横になる（縦に立ったまま止まらない）：落ち着いた向きが、背の低い向き（長い辺が横）', angBad === 0, 'bad=' + angBad);
+  check('屋根は薄い板に分かれて飛ぶ（1 枚の高さ ' + roofMax.toFixed(1) + ' 以下）。着地して立つ高さは壁でも ' + 40 + ' 以下', roofMax > 0 && roofMax <= 14.5 && tallBad.length === 0, tallBad.slice(0, 3).join(' / '));
+  check('段階 7：足場の柱の上に、屋根・柱・壁・床板の破片が残らない（柱の上は本人だけ）', pillarBad === 0, 'bad=' + pillarBad);
+  const roofN = st => buildShow(st, 5).pieces.filter(p => p.edge === '#8a3a2a').length;
+  check('屋根の板の数は 20〜60 枚で、全段階の破片の合計が上限（' + CFG.maxPieces + '）以内', roofN(4) >= 20 && roofN(4) <= 60 && ALLS.every(st => buildShow(st, 5).pieces.length <= CFG.maxPieces), roofN(4) + ' 枚');
+  startPlay(); Game.count = TOP; advance(CFG.duration + 0.01); while (Game.mode === 'finish') Game.step(CFG.h);
+  advance(1.0);
+  check('見せ場の時刻は速さ（段階 10 は ' + CFG.showSpeed[10] + ' 倍）に合わせて進む：1 秒で ' + CFG.showSpeed[10] + ' 単位', Math.abs(Game.showT - CFG.showSpeed[10] * 1.0) < 0.03 && Math.abs(Game.showR - 1.0) < 0.03, 'showT=' + Game.showT.toFixed(3));
 
   const s = document.createElement('h2');
   s.textContent = fail === 0 ? '全部 OK（' + (total - fail) + '/' + total + '）' : 'NG が ' + fail + ' 件（OK ' + (total - fail) + '/' + total + '）';

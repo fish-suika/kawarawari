@@ -215,7 +215,7 @@ function drawCast(v, sh, inShow, ts) {
 function drawBubbles(v, sh, ts) {
   for (const b of sh.bubbles) {
     if (ts < b.t0 || ts >= b.t1) continue;
-    const sp = bubbleSpot(b.who, sh.stage, ts);
+    const sp = bubbleSpot(b.who, sh.stage, ts, v.k);
     if (sp) drawBubble(cx, v, sp.x, sp.y, b.text, ts - b.t0);
   }
 }
@@ -288,4 +288,187 @@ function drawGrass(v, cp) {
     c.moveTo(x + 2.6, GY + 0.6); c.lineTo(x + 3.8, GY - 1.8); c.lineTo(x + 5, GY + 0.6);
   }
   c.fill();
+}
+
+// ===== 段階 8〜10：宇宙（星・大気・マグマ・地球の外見・割れ目・ひび・月と星の顔・万歳する住人）=====
+const STARS = (() => { const R = mkRng(4242), a = []; for (let i = 0; i < 150; i++) a.push([R(), R(), R()]); return a; })();
+function drawStars(v, sp) {
+  if (sp.a1 < 0.02) return;
+  const c = cx, k = v.k, w = v.x1 - v.x0, h = v.y1 - v.y0;
+  c.fillStyle = '#fff';
+  for (const [u, t, q] of STARS) {
+    c.globalAlpha = sp.a1 * (0.45 + 0.55 * Math.abs(Math.sin(nowT * (1 + q * 2) + q * 30)));
+    c.beginPath(); c.arc(v.x0 + u * w, v.y0 + t * h, (0.7 + q * 1.3) / k, 0, 6.283); c.fill();
+  }
+  c.globalAlpha = 1;
+}
+// 地球のまわりの薄い大気（水色のふち）
+function drawAtmo(v, sp) {
+  if (sp.eps < 0.3) return;
+  const c = cx, Re = PR / sp.eps, ccy = GY + Re, th = Math.max(0.1 * Re, 18 / v.k), a = sp.a1 * (1 - sp.sp);
+  if (a < 0.01) return;
+  const g = c.createRadialGradient(PX, ccy, Re * 0.99, PX, ccy, Re + th);
+  g.addColorStop(0, 'rgba(140,210,255,' + 0.85 * a + ')'); g.addColorStop(1, 'rgba(90,160,255,0)');
+  c.fillStyle = g; c.beginPath(); c.arc(PX, ccy, Re + th, 0, 6.283); c.fill();
+}
+// 割れ目の奥のマグマ（左右の半分より後ろ）
+function drawMagma(v, sp) {
+  if (sp.magma < 0.01) return;
+  const c = cx, Re = PR / Math.max(sp.eps, 0.05), ccy = GY + Re;
+  const g = c.createLinearGradient(0, GY, 0, GY + Re * 2);
+  g.addColorStop(0, '#fff3a8'); g.addColorStop(0.12, '#ffb83a'); g.addColorStop(0.45, '#ff7a2a'); g.addColorStop(1, '#a8281f');
+  c.globalAlpha = Math.min(1, sp.magma * 1.5); c.fillStyle = g; c.beginPath(); c.arc(PX, ccy, Re, 0, 6.283); c.fill(); c.globalAlpha = 1;
+}
+// 角のない大きな塊（点を結ぶなめらかな閉じた線）
+function blob(c, pts, R, ox, oy) {
+  const P = pts.map(p => [ox + p[0] * R, oy + p[1] * R]), n = P.length, mid = (a, b) => [(a[0] + b[0]) / 2, (a[1] + b[1]) / 2];
+  const m0 = mid(P[0], P[1]);
+  c.beginPath(); c.moveTo(m0[0], m0[1]);
+  for (let i = 1; i <= n; i++) { const p = P[i % n], m = mid(p, P[(i + 1) % n]); c.quadraticCurveTo(p[0], p[1], m[0], m[1]); }
+  c.closePath();
+}
+const LAND = [
+  [[-0.5, -0.82], [-0.2, -0.99], [0.18, -1.0], [0.5, -0.82], [0.64, -0.56], [0.35, -0.45], [0.12, -0.6], [-0.12, -0.42], [-0.4, -0.5], [-0.62, -0.62]],
+  [[-0.95, -0.1], [-0.7, -0.34], [-0.42, -0.15], [-0.5, 0.2], [-0.72, 0.52], [-0.9, 0.3]],
+  [[0.28, 0.02], [0.62, -0.14], [0.9, 0.18], [0.62, 0.56], [0.34, 0.42]],
+  [[-0.3, 0.55], [0.05, 0.6], [0.14, 0.88], [-0.18, 0.92]]];
+const GCLOUD = [[-0.35, -0.7, 0.2, 0.05], [0.32, -0.3, 0.24, 0.06], [-0.62, 0.08, 0.18, 0.05], [0.1, 0.42, 0.28, 0.06], [0.66, 0.62, 0.16, 0.04], [-0.1, -0.12, 0.16, 0.04]];
+// 宇宙から見た地球（青い海と緑の大陸と雲）。glb で下の断面（地層・マグマ）と入れ替わる
+function drawGlobe(v, sp) {
+  if (sp.glb < 0.01) return;
+  const c = cx, Re = PR / Math.max(sp.eps, 0.05), ccy = GY + Re, lw = 3 / v.k;
+  c.save(); c.globalAlpha = sp.glb;
+  c.beginPath(); c.arc(PX, ccy, Re, 0, 6.283); c.clip();
+  let g = c.createRadialGradient(PX - Re * 0.35, ccy - Re * 0.4, Re * 0.1, PX, ccy, Re);
+  g.addColorStop(0, '#86d4ff'); g.addColorStop(0.6, '#3b8fe0'); g.addColorStop(1, '#1f5db3');
+  c.fillStyle = g; c.fillRect(PX - Re, ccy - Re, 2 * Re, 2 * Re);
+  c.lineJoin = 'round'; c.fillStyle = '#6fcb74'; c.strokeStyle = '#3f9a52'; c.lineWidth = lw;
+  for (const L of LAND) { blob(c, L, Re, PX, ccy); c.fill(); c.stroke(); }
+  c.fillStyle = 'rgba(255,255,255,0.82)';
+  for (const [x, y, rx, ry] of GCLOUD) { c.beginPath(); c.ellipse(PX + x * Re, ccy + y * Re, rx * Re, ry * Re, -0.25, 0, 6.283); c.fill(); }
+  c.fillStyle = '#f3fbff'; c.beginPath(); c.ellipse(PX, ccy + Re * 0.99, Re * 0.32, Re * 0.07, 0, 0, 6.283); c.fill();
+  g = c.createRadialGradient(PX + Re * 0.3, ccy + Re * 0.35, Re * 0.4, PX + Re * 0.3, ccy + Re * 0.35, Re * 1.3);
+  g.addColorStop(0, 'rgba(10,20,80,0)'); g.addColorStop(1, 'rgba(10,20,80,0.45)');
+  c.fillStyle = g; c.fillRect(PX - Re, ccy - Re, 2 * Re, 2 * Re);
+  c.restore();
+  c.strokeStyle = 'rgba(255,255,255,' + 0.7 * sp.glb + ')'; c.lineWidth = 2 / v.k; c.beginPath(); c.arc(PX, ccy, Re, 0, 6.283); c.stroke();
+}
+
+// ---- 割れ目・ひび（光る線）----
+const RIFT = (() => {
+  const R = mkRng(555), main = [[PX, GY]];
+  let x = PX;
+  for (let i = 1; i <= 16; i++) { x += (R() - 0.5) * (i < 3 ? 30 : 160); main.push([x, GY + i * 140]); }
+  const br = (i, dir) => { const a = [main[i].slice()]; let bx = main[i][0], by = main[i][1]; for (let j = 0; j < 4; j++) { bx += dir * (80 + R() * 120); by += 60 + R() * 90; a.push([bx, by]); } return a; };
+  return [main, br(3, -1), br(5, 1), br(8, -1), br(10, 1)];
+})();
+const ECR = (() => {
+  const R = mkRng(909), out = [];
+  [0, -0.45, 0.5, -0.85, 0.9, -1.15, 1.2].forEach((off, j) => {
+    let x = PX, y = GY + 4, d = Math.PI / 2 + off;
+    const p = [[x, y]];
+    for (let i = 0; i < 30; i++) {
+      d = j === 0 ? Math.PI / 2 + (R() - 0.5) * 0.4 : d + (R() - 0.5) * 0.9;
+      const st = 330 + R() * 200;
+      x += Math.cos(d) * st; y += Math.sin(d) * st;
+      if (Math.hypot(x - PX, y - PCY) > PR * 0.97) { p.push([x, y]); break; }
+      p.push([x, y]);
+    }
+    out.push(p);
+  });
+  return out;
+})();
+function trace(c, pts, frac) {            // 線を長さの frac 分だけたどる
+  let len = 0; const seg = [];
+  for (let i = 1; i < pts.length; i++) { const d = Math.hypot(pts[i][0] - pts[i - 1][0], pts[i][1] - pts[i - 1][1]); seg.push(d); len += d; }
+  let rem = len * clamp(frac, 0, 1);
+  c.beginPath(); c.moveTo(pts[0][0], pts[0][1]);
+  for (let i = 1; i < pts.length && rem > 0; i++) {
+    const d = seg[i - 1];
+    if (rem >= d) { c.lineTo(pts[i][0], pts[i][1]); rem -= d; }
+    else { const u = rem / d; c.lineTo(lerp(pts[i - 1][0], pts[i][0], u), lerp(pts[i - 1][1], pts[i][1], u)); rem = 0; }
+  }
+}
+function glowStroke(c, k, a) {            // 暗い縁・オレンジ・白っぽい芯の 3 重
+  c.lineJoin = 'round'; c.lineCap = 'round';
+  c.strokeStyle = 'rgba(60,20,8,' + 0.7 * a + ')'; c.lineWidth = 9 / k; c.stroke();
+  c.strokeStyle = 'rgba(255,150,40,' + a + ')'; c.lineWidth = 5 / k; c.stroke();
+  c.strokeStyle = 'rgba(255,246,170,' + a + ')'; c.lineWidth = 2 / k; c.stroke();
+}
+function drawRiftCrack(v, sp) {              // 大陸に走る地割れ（開き始めたら消える）
+  const a = clamp(1 - sp.open * 1.5, 0, 1);
+  if (sp.crack <= 0 || a <= 0.01) return;
+  const c = cx;
+  RIFT.forEach((p, i) => { const f = i === 0 ? sp.crack : (sp.crack - 0.2 - i * 0.12) * 3; if (f <= 0) return; trace(c, p, f); glowStroke(c, v.k, a); });
+}
+function drawEarthCracks(v, sp) {             // 地球の表面に広がるひび
+  const a = 1 - clamp(sp.sp * 1.5, 0, 1);
+  if (sp.ecr <= 0 || a <= 0.01) return;
+  const c = cx, Re = PR;
+  c.save(); c.beginPath(); c.arc(PX, GY + Re, Re, 0, 6.283); c.clip();
+  ECR.forEach((p, j) => { const f = sp.ecr * 1.5 - j * 0.06; if (f <= 0) return; trace(c, p, f); glowStroke(c, v.k, a); });
+  c.restore();
+}
+
+// ---- 割れた地球の上で万歳している小さな家と住人（画面での大きさは一定）----
+const FOLK_COL = ['#ff8a5c', '#5c9cff', '#f2c94c', '#7bd389', '#e07ac0'];
+function drawFolk(v, sp) {
+  const a = clamp((sp.eps - 0.4) * 2, 0, 1);
+  if (a < 0.02) return;
+  const c = cx, Re = PR / sp.eps, u = 1.15 / v.k;
+  c.save(); c.globalAlpha = a; c.lineJoin = 'round'; c.lineCap = 'round';
+  FOLK.forEach(([s, kind], i) => {
+    const p = surfPt(s, Re);
+    c.save(); c.translate(p.x, p.y); c.rotate(p.a); c.scale(u, u);
+    if (kind === 'house') {
+      c.fillStyle = '#fff2c8'; c.strokeStyle = INK; c.lineWidth = 1.1;
+      c.fillRect(-7, -10, 14, 10); c.strokeRect(-7, -10, 14, 10);
+      c.fillStyle = i % 4 === 1 ? '#e4584a' : '#4c7fd9'; c.beginPath(); c.moveTo(-9.5, -10); c.lineTo(0, -18); c.lineTo(9.5, -10); c.closePath(); c.fill(); c.stroke();
+      c.fillStyle = '#b9824a'; c.fillRect(-1.8, -5.5, 3.6, 5.5); c.fillStyle = '#d4f0ff'; c.fillRect(2.6, -8, 3, 3);
+    } else {
+      const f = Math.sin(nowT * 8 + i * 1.7) * 1.6;
+      c.strokeStyle = INK; c.lineWidth = 3.4; c.beginPath(); c.moveTo(-6 + f, -25); c.lineTo(-1, -15); c.lineTo(1, -15); c.lineTo(6 - f, -25); c.moveTo(-1.6, -8); c.lineTo(-2, 0); c.moveTo(1.6, -8); c.lineTo(2, 0); c.stroke();
+      c.strokeStyle = FOLK_COL[(i >> 1) % 5]; c.lineWidth = 2; c.beginPath(); c.moveTo(-6 + f, -25); c.lineTo(-1, -15); c.lineTo(1, -15); c.lineTo(6 - f, -25); c.stroke();
+      c.fillStyle = FOLK_COL[(i >> 1) % 5]; c.strokeStyle = INK; c.lineWidth = 1; rr(c, -3.4, -16, 6.8, 9, 2); c.fill(); c.stroke();
+      c.fillStyle = '#f6cfa6'; c.beginPath(); c.arc(0, -20, 3.4, 0, 6.283); c.fill(); c.stroke();
+      c.fillStyle = INK; c.beginPath(); c.arc(-1.2, -20.4, 0.55, 0, 6.283); c.arc(1.2, -20.4, 0.55, 0, 6.283); c.fill();
+      c.strokeStyle = '#9a2f26'; c.lineWidth = 0.7; c.beginPath(); c.arc(0, -19, 1.1, 0.1, Math.PI - 0.1); c.stroke();
+    }
+    c.restore();
+  });
+  c.restore();
+}
+
+// ---- びっくり顔の月と星（宇宙から見たとき）----
+function drawFace(c, x, y, r, surprised) {
+  c.save(); c.translate(x, y);
+  c.fillStyle = '#fff'; c.strokeStyle = INK; c.lineWidth = r * 0.05;
+  for (const sx of [-1, 1]) {
+    if (surprised) {
+      c.fillStyle = '#fff'; c.beginPath(); c.arc(sx * r * 0.3, -r * 0.1, r * 0.19, 0, 6.283); c.fill(); c.stroke();
+      c.fillStyle = INK; c.beginPath(); c.arc(sx * r * 0.3, -r * 0.1, r * 0.07, 0, 6.283); c.fill();
+    } else { c.fillStyle = INK; c.beginPath(); c.arc(sx * r * 0.3, -r * 0.1, r * 0.06, 0, 6.283); c.fill(); }
+  }
+  c.strokeStyle = INK; c.lineWidth = r * 0.05;
+  if (surprised) { c.fillStyle = '#9a2f26'; c.beginPath(); c.ellipse(0, r * 0.33, r * 0.12, r * 0.19, 0, 0, 6.283); c.fill(); c.stroke(); }
+  else { c.beginPath(); c.arc(0, r * 0.18, r * 0.16, 0.2, Math.PI - 0.2); c.stroke(); }
+  c.restore();
+}
+function drawSpaceBuddies(v, sp) {
+  if (sp.a1 < 0.6) return;
+  const c = cx, sur = sp.ecr > 0.02 || sp.sp > 0, a = clamp((sp.a1 - 0.6) * 2.5, 0, 1), m = MOON, s = STAR;
+  c.save(); c.globalAlpha = a;
+  const g = c.createRadialGradient(m.x - m.r * 0.3, m.y - m.r * 0.3, m.r * 0.1, m.x, m.y, m.r);
+  g.addColorStop(0, '#fffbe6'); g.addColorStop(1, '#e6d9a8');
+  c.fillStyle = g; c.strokeStyle = INK; c.lineWidth = m.r * 0.05; c.beginPath(); c.arc(m.x, m.y, m.r, 0, 6.283); c.fill(); c.stroke();
+  c.fillStyle = 'rgba(190,170,120,0.55)';
+  for (const [dx, dy, r0] of [[-0.5, 0.35, 0.16], [0.5, 0.45, 0.12], [0.15, -0.6, 0.1]]) { c.beginPath(); c.arc(m.x + dx * m.r, m.y + dy * m.r, r0 * m.r, 0, 6.283); c.fill(); }
+  drawFace(c, m.x, m.y, m.r, sur);
+  c.save(); c.translate(s.x, s.y); c.rotate(Math.sin(nowT * 2) * 0.08);
+  c.beginPath();
+  for (let i = 0; i < 10; i++) { const r0 = i % 2 ? s.r * 0.5 : s.r, ang = -Math.PI / 2 + i * Math.PI / 5; c.lineTo(Math.cos(ang) * r0, Math.sin(ang) * r0); }
+  c.closePath(); c.fillStyle = '#ffe05a'; c.strokeStyle = '#d9a420'; c.lineWidth = s.r * 0.07; c.lineJoin = 'round'; c.fill(); c.stroke();
+  drawFace(c, 0, s.r * 0.08, s.r * 0.62, sur);
+  c.restore();
+  c.restore();
 }

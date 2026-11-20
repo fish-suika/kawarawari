@@ -77,7 +77,7 @@ const Snd = (() => {
     // 段階の区切りごとのご褒美の音
     tier(tier) {
       if (!ac) return; const t = now();
-      const f = 440 * Math.pow(2, Math.min(tier, 7) * 2 / 12);
+      const f = 440 * Math.pow(2, Math.min(tier, 10) * 2 / 12);
       tone(f, t, 0.18, { type: 'triangle', gain: 0.1 });
       tone(f * 1.5, t + 0.05, 0.18, { type: 'triangle', gain: 0.08 });
     },
@@ -154,20 +154,50 @@ const Snd = (() => {
       } else if (name === 'run') {       // 逃げる足音：タタタタ
         for (let i = 0; i < 6; i++) noise(t + i * 0.09, 0.04, { type: 'lowpass', f: 700, q: 0.8, gain: 0.12 });
       } else if (name === 'gong') {      // 破門：ゴォーン
-        tone(98, t, 1.8, { gain: 0.3, f2: 92, attack: 0.01 });
-        tone(196, t, 1.5, { type: 'triangle', gain: 0.14, f2: 190, attack: 0.01 });
-        tone(312, t, 1.1, { type: 'sine', gain: 0.08, attack: 0.01 });
-        noise(t, 0.12, { f: 1800, q: 0.9, gain: 0.12 });
+        this.gongAt(t, 1);
+      } else if (name === 'rise') {      // カメラが空へ引く：ヒュイーン
+        tone(220, t, 0.7, { gain: 0.14, f2: 1400, attack: 0.1 });
+        noise(t, 0.7, { f: 600, f2: 3000, q: 1.2, gain: 0.1 });
+      } else if (name === 'rift') {      // 大陸に地割れ：ゴゴゴ＋ピシピシ
+        noise(t, 0.6, { type: 'lowpass', f: 260, f2: 80, q: 0.8, gain: 0.3 });
+        for (let i = 0; i < 5; i++) noise(t + i * 0.09, 0.05, { type: 'highpass', f: 3000, q: 0.8, gain: 0.14 });
+        tone(50, t, 0.7, { gain: 0.3, f2: 30, attack: 0.08 });
+      } else if (name === 'quake') {     // 大陸が割れて開く：どどーん
+        tone(40, t, 1.4, { gain: 0.5, f2: 24, attack: 0.02 });
+        noise(t, 1.2, { type: 'lowpass', f: 500, f2: 60, q: 0.7, gain: 0.4 });
+        noise(t, 0.3, { f: 2200, f2: 300, q: 0.7, gain: 0.2 });
+      } else if (name === 'space') {     // 宇宙の静けさ：きらーん（ほとんど無音）
+        tone(1320, t, 1.2, { gain: 0.04, attack: 0.3 });
+        tone(1976, t + 0.15, 1.0, { gain: 0.03, attack: 0.3 });
+      } else if (name === 'earthcrack') { // 静けさのあと：ピシピシッ、どおぉん
+        for (let i = 0; i < 6; i++) noise(t + i * 0.05, 0.05, { type: 'highpass', f: 2500 + i * 300, q: 0.8, gain: 0.2 });
+        tone(36, t + 0.05, 1.6, { gain: 0.5, f2: 22, attack: 0.02 });
+        noise(t + 0.05, 1.3, { type: 'lowpass', f: 400, f2: 50, q: 0.7, gain: 0.4 });
+      } else if (name === 'earthsplit') { // 地球が割れる：どごおおおん
+        tone(30, t, 2.2, { gain: 0.5, f2: 20, attack: 0.02 });
+        noise(t, 2.0, { type: 'lowpass', f: 800, f2: 40, q: 0.7, gain: 0.42 });
+        noise(t, 0.6, { f: 3000, f2: 200, q: 0.7, gain: 0.22 });
+        tone(60, t, 1.6, { type: 'sawtooth', gain: 0.12, f2: 28 });
+      } else if (name === 'twinkle') {   // 割れたあとのきらきら
+        tone(1568, t, 0.5, { type: 'triangle', gain: 0.06 });
+        tone(2093, t + 0.12, 0.5, { type: 'triangle', gain: 0.05 });
       } else if (name === 'crater') {    // どーん
         tone(72, t, 1.1, { gain: 0.5, f2: 26, attack: 0.01 });
         noise(t, 1.2, { type: 'lowpass', f: 1000, f2: 70, q: 0.7, gain: 0.4 });
         noise(t, 0.3, { f: 2500, f2: 400, q: 0.7, gain: 0.2 });
       }
     },
+    // ゴング（k：音の高さの倍率。段階が高いほど低く）
+    gongAt(t, k) {
+      tone(98 * k, t, 1.8, { gain: 0.3, f2: 92 * k, attack: 0.01 });
+      tone(196 * k, t, 1.5, { type: 'triangle', gain: 0.14, f2: 190 * k, attack: 0.01 });
+      tone(312 * k, t, 1.1, { type: 'sine', gain: 0.08, attack: 0.01 });
+      noise(t, 0.12, { f: 1800, q: 0.9, gain: 0.12 });
+    },
     // 認定証が出る音：太鼓のどん＋段階が高いほど明るい鈴（破門はゴング、出直しはしょんぼり）
     cert(stage) {
       if (!ac) return; const t = now();
-      if (stage >= 7) { this.cue('gong'); return; }
+      if (stage >= 7) { this.gongAt(t, 1 - (stage - 7) * 0.1); return; }
       if (stage === 0) return;
       tone(110, t, 0.3, { gain: 0.38, f2: 55 });
       noise(t, 0.05, { f: 1400, q: 0.9, gain: 0.14 });

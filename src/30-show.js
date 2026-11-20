@@ -10,6 +10,13 @@ const DL = -70, DR = 160;                              // 道場の内側の左�
 const HX0 = -12, HX1 = 118;                            // 段階 3 で床が抜ける範囲
 const PX = KX + 1, PW = 42;                            // 最後に残る足場の柱（中心x・幅）
 const CR = { x: PX, R: 230, D: 300 };                  // クレーター（中心x・半径・深さ）
+// ---- 段階 8〜10（宇宙へ。本人の最終修正 2026-11-20）：地球は半径 PR の円で、中心は (PX, PCY)。地面の頂点 (PX, GY) が地球のてっぺん ----
+const PR = 5200, PCY = GY + PR;
+const ANG0 = 0.07, SPLITD = 0.16 * PR, SPLITA = 0.05;  // 大陸が割れて開く角度／地球が割れて離れる距離・傾き
+const MOON = { x: PX + 5950, y: PCY - 2300, r: 520 };   // びっくり顔の月
+const STAR = { x: PX - 5900, y: PCY - 3300, r: 330 };   // びっくり顔の星
+// 地球の表面に立つ小さな家と住人（中心から測った弧の長さ。割れても自分の側に乗ったまま万歳している）
+const FOLK = [[-1950, 'man'], [-1700, 'house'], [-1400, 'man'], [-1100, 'house'], [-800, 'man'], [800, 'man'], [1100, 'house'], [1400, 'man'], [1700, 'house'], [1950, 'man']];
 const GRAV = 700;
 const DROP_T = 1.1;                                    // 床が抜けて、床に載っていた物が落ちる時刻
 const FALL_T = 1.0;                                    // 本人が下の階へ落ち始める時刻
@@ -21,7 +28,10 @@ const CAMS = [BASE_CAM, BASE_CAM, BASE_CAM,
   { cx: 0, cy: 85, w: 440, h: 300 },         // 4 道場の建物（外へ逃げた門下生も入る）
   { cx: 45, cy: 60, w: 760, h: 420 },        // 5 町内
   { cx: 45, cy: 15, w: 800, h: 470 },        // 6 裏山
-  { cx: 39, cy: 215, w: 820, h: 560 }];      // 7 クレーター
+  { cx: 39, cy: 215, w: 820, h: 560 },       // 7 クレーター
+  { cx: PX, cy: 640, w: 4200, h: 3000 },     // 8 地平線が丸く見える高さ（大陸が裂ける）
+  { cx: PX, cy: PCY, w: 13200, h: 13200 },   // 9 宇宙から見た地球の全体
+  { cx: PX, cy: PCY, w: 13200, h: 13200 }];  // 10 地球が割れて離れる
 // 各段階で「画面に入っていてほしい範囲」（検証でカメラが覆っているか確かめる）
 const EXTENT = [
   { x0: 10, x1: 100, y0: 60, y1: 150 }, { x0: 10, x1: 100, y0: 60, y1: 150 }, { x0: 10, x1: 100, y0: 60, y1: 150 },
@@ -29,7 +39,10 @@ const EXTENT = [
   { x0: -92, x1: 182, y0: -42, y1: 225 },
   { x0: -300, x1: 365, y0: 60, y1: 225 },
   { x0: -260, x1: 350, y0: -210, y1: 225 },
-  { x0: CR.x - CR.R, x1: CR.x + CR.R, y0: 60, y1: GY + CR.D }];
+  { x0: CR.x - CR.R, x1: CR.x + CR.R, y0: 60, y1: GY + CR.D },
+  { x0: PX - 1900, x1: PX + 1900, y0: -300, y1: 1400 },
+  { x0: PX - PR - 300, x1: PX + 6500, y0: GY - 300, y1: GY + 2 * PR + 300 },
+  { x0: PX - PR - 300 - SPLITD, x1: PX + 6500, y0: GY - 300, y1: GY + 2 * PR + 300 }];
 // 裏山（左半分・右半分。ぎざぎざの稜線）
 const MT_L = [-260, 140, -190, 50, -130, -40, -85, -95, -40, -150, 10, -185, 45, -210, 45, 140];
 const MT_R = [45, -210, 80, -170, 135, -110, 190, -40, 255, 40, 350, 140, 45, 140];
@@ -79,13 +92,26 @@ function bubblesFor(S) {
   if (S >= 4) B('s2', '屋根が……！', 1.8, S === 4 ? Infinity : 2.05);
   if (S >= 5) B('r0', 'うちが……', 2.7, S === 5 ? Infinity : 3.05);
   if (S >= 6) B('r3', '山が……', 3.1, S === 6 ? Infinity : 3.5);
-  if (S >= 7) B('r2', '……破門', 3.5, Infinity);
+  if (S >= 7) B('r2', '……破門', 3.5, S === 7 ? Infinity : 4.3);
+  if (S === 8) B('r1', '大陸が……！', 4.85, Infinity);
+  if (S >= 9) B('r1', '大陸が……！', 4.85, 5.7);
+  if (S >= 9) { B('moon', 'ひ、ひび……！？', 6.0, S === 9 ? Infinity : 6.8); B('star', 'ひえっ！', 6.2, S === 9 ? Infinity : 6.8); }
+  if (S >= 10) { B('moon', 'ち、地球が……！？', 6.9, Infinity); B('f7', 'ばんざーい！', 7.05, Infinity); }
   return b;
 }
 // 吹き出しの出どころ（頭の上の世界座標）。見えない・まだいないときは null
-function bubbleSpot(who, S, t) {
-  const o = { x: 0, pose: '', dir: 1, kneel: false, ph: 0 };
-  if (who[0] === 'r') { const r = RESIDENTS[+who[1]]; return { x: r.x, y: HILL_TOP - 30 }; }
+function bubbleSpot(who, S, t, k) {
+  const o = { x: 0, pose: '', dir: 1, kneel: false, ph: 0 }, sp = S >= 8 ? spaceAt(S, t) : NOSP;
+  if (who === 'moon') return { x: MOON.x, y: MOON.y - MOON.r };
+  if (who === 'star') return { x: STAR.x, y: STAR.y - STAR.r };
+  if (who[0] === 'f') {                      // 地球の表面で万歳している住人（割れた半分に乗ったまま動く）
+    const f = FOLK[+who.slice(1)], p = surfPt(f[0], PR), side = f[0] < 0 ? -1 : 1, q = xfPoint(sp, side, p.x, p.y), up = 24 / (k || 0.05), a = p.a + halfXf(sp, side).rot;
+    return { x: q.x + Math.sin(a) * up, y: q.y - Math.cos(a) * up };
+  }
+  if (who[0] === 'r') {
+    const r = RESIDENTS[+who[1]], q = xfPoint(sp, r.x < PX ? -1 : 1, r.x, HILL_TOP - 30);
+    return S >= 8 ? q : { x: r.x, y: HILL_TOP - 30 };
+  }
   const i = CAST.findIndex(a => a.id === who), a = CAST[i];
   castPose(a, i, S, t, o);
   return { x: o.x, y: GY - (o.kneel ? 22 : 29) * a.s - 1 };
@@ -100,16 +126,59 @@ function certBox(W, H, ratio) {
   const pad = 14, w = Math.max(160, Math.min(W * 0.46, 460, (H - pad * 2) / ratio)), h = w * ratio;   // 横：右側
   return { portrait: false, w, h, x: W - w - pad, y: (H - h) / 2 };
 }
-// 認定証より上に見せたい一番下の高さ（世界の y）。クレーターの段階は穴の底まで、ほかは本人の足もと（影まで）
-const resultBottom = S => (S >= 7 ? GY + CR.D + 4 : (S >= 3 ? BY : GY) + 7);
+// 認定証より上に見せたい一番下／一番上の高さ（世界の y）。クレーターの段階は穴の底まで、ほかは本人の足もと（影まで）。段階 8 は割れ目の深いところまで、段階 9〜10 は地球ぜんぶ
+const resultBottom = S => (S >= 9 ? GY + PR * 2.1 : S === 8 ? GY + 1800 : S >= 7 ? GY + CR.D + 4 : (S >= 3 ? BY : GY) + 7);
+const resultTop = S => (S >= 9 ? GY - PR * 0.05 : S === 8 ? GY - 500 : (S >= 3 ? BY : GY) - 64);
 // 認定証が出るとき、見せ場の最後の絵が認定証にかぶらないよう絵をずらす量（画面 px。負＝上／左へ）。cam は見せ場の最後のカメラ
+// 戻り値の z：絵を縮める倍率（地球ぜんぶを認定証の横／上の空きに収めるときだけ 1 より小さい）
 function resultShift(S, cam, W, H, box) {
-  const v = viewFor(cam, W, H), fy = S >= 3 ? BY : GY;
-  const footY = H / 2 + (resultBottom(S) - cam.cy) * v.k, headY = H / 2 + (fy - 64 - cam.cy) * v.k;
-  if (box.portrait) return { x: 0, y: Math.max(Math.min(0, box.y - 18 - footY), 26 - headY) };   // 足もとが認定証の上に出るまで。頭は画面内に
-  const sx = S >= 3 ? KX + 1 : 62, px = W / 2 + (sx - cam.cx) * v.k;
-  return { x: Math.min(0, (box.x - 12) / 2 - px), y: 0 };
+  const k0 = viewFor(cam, W, H).k;
+  let z = 1;
+  if (S >= 9) {
+    const D = (resultBottom(S) - resultTop(S)) * k0, room = box.portrait ? box.y - 18 - 28 : box.x - 12 - 20;
+    if (D > room) z = room / D;
+  }
+  const k = k0 * z;
+  const footY = H / 2 + (resultBottom(S) - cam.cy) * k, headY = H / 2 + (resultTop(S) - cam.cy) * k;
+  if (box.portrait) return { x: 0, y: Math.max(Math.min(0, box.y - 18 - footY), 26 - headY), z };   // 足もとが認定証の上に出るまで。頭は画面内に
+  const sx = S >= 3 ? KX + 1 : 62, px = W / 2 + (sx - cam.cx) * k;
+  return { x: Math.min(0, (box.x - 12) / 2 - px), y: 0, z };
 }
+
+// ---- 段階 8〜10：宇宙へ ----
+// 見せ場の長さ（見せ場の単位）。段階 8〜10 は少し速く進めて、実際の秒数を showSecs に収める
+const showDur = S => CFG.showSecs[S] * CFG.showSpeed[S];
+// カメラの幅から「地面が丸くなる度合い」（0：平ら 〜 1：地球の円）
+const epsFor = w => smooth((Math.log(w) - Math.log(1500)) / (Math.log(4200) - Math.log(1500)));
+const NOSP = { eps: 0, a1: 0, a2: 0, crack: 0, open: 0, ang: 0, magma: 0, glb: 0, world: 1, ecr: 0, sp: 0 };
+// 時刻 t の宇宙の状態。a1・a2：空が暗くなる度合い／crack：地割れが走る／open・ang：大陸が開く／glb：地球の外見／ecr：ひび／sp：割れて離れる
+function spaceAt(S, t) {
+  if (S < 8) return NOSP;
+  const T = CFG.sp, u = r => smooth((t - r[0]) / (r[1] - r[0]));
+  const eps = epsFor(camAt(S, t).w), op = u(T.open), dec = S >= 9 ? u(T.close) : 0;
+  const o = { eps, a1: smooth((eps - 0.15) / 0.6), a2: smooth((eps - 0.5) / 0.45), crack: u(T.run), open: op };
+  o.ang = ANG0 * op * (1 - 0.85 * dec);
+  o.magma = op * (1 - dec);
+  o.glb = S >= 9 ? u(T.globe) : 0;
+  o.world = S >= 9 ? 1 - u(T.world) : 1;
+  o.ecr = S >= 9 ? u(T.ecr) : 0;
+  o.sp = S >= 10 ? u(T.split) : 0;
+  if (S >= 10) o.glb *= 1 - smooth((o.sp - 0.1) / 0.5);   // 割れたら中身（地層・マグマ）を見せる
+  return o;
+}
+// 地球の左右の半分の動き（side：-1 左・+1 右）。中心まわりに開く角度と、横に離れる距離
+function halfXf(sp, side) { return { dx: side * SPLITD * sp.sp, rot: side * (sp.ang + SPLITA * sp.sp) }; }
+function xfPoint(sp, side, x, y) {
+  const h = halfXf(sp, side), c = Math.cos(h.rot), s = Math.sin(h.rot), ux = x - PX, uy = y - PCY;
+  return { x: PX + ux * c - uy * s + h.dx, y: PCY + ux * s + uy * c };
+}
+// 表面の弧の長さ s の点（外向きの角度 a つき）。Re：そのときの地球の半径
+function surfPt(s, Re) {
+  const a = s / Re;
+  return { x: PX + Re * Math.sin(a), y: GY + Re - Re * Math.cos(a), a };
+}
+// 足場の柱の幅（引いたときは画面で細くなりすぎないよう広げる）
+const pillarW = (k, eps) => (eps > 0.05 ? Math.max(PW, 14 / k) : PW);
 
 // 乱数（シード付き。同じシードなら同じ壊れ方）
 function mkRng(seed) {
@@ -144,10 +213,11 @@ function craterAt(S, t) {
   return smooth((t - CFG.craterT[0]) / (CFG.craterT[1] - CFG.craterT[0]));
 }
 // 地面の上端（クレーターで掘れた後。足場の柱だけ残る）
-function craterTop(x, cp) {
+function craterTop(x, cp, pw) {
+  if (pw === undefined) pw = PW;
   const u = (x - CR.x) / CR.R;
   let y = GY + (cp > 0 && Math.abs(u) < 1 ? cp * CR.D * Math.pow(1 - u * u, 0.75) : 0);
-  if (x > PX - PW / 2 && x < PX + PW / 2) y = Math.min(y, BY);
+  if (x > PX - pw / 2 && x < PX + pw / 2) y = Math.min(y, BY);
   return y;
 }
 // 画面の揺れ（px）・光（0〜）
@@ -211,7 +281,7 @@ function poseAt(p, t, o) {
     } else if (tt < p.tl) {                // 飛ぶ
       o.x = p.x + p.vx * tt; o.y = p.y + p.vy * tt + 0.5 * GRAV * tt * tt; o.a = p.w * tt;
     } else {                               // 着地（少し滑って、平らに落ち着く）
-      const u = tt - p.tl, ar = p.w * p.tl, flat = Math.round(ar / Math.PI) * Math.PI;
+      const u = tt - p.tl, ar = p.w * p.tl, flat = p.lie ? Math.round((ar - Math.PI / 2) / Math.PI) * Math.PI + Math.PI / 2 : Math.round(ar / Math.PI) * Math.PI;   // 縦長の物（柱・壁）は横になって落ち着く
       o.x = p.x + p.vx * p.tl + p.vx * 0.06 * (1 - Math.exp(-8 * u)); o.y = p.fy; o.a = lerp(ar, flat, 1 - Math.exp(-12 * u));
       if (t >= p.drop) { const dd = t - p.drop; o.y = Math.min(p.fy2, p.fy + 0.5 * GRAV * dd * dd); }
     }
@@ -248,8 +318,14 @@ function buildShow(S, seed) {
   function add(o) {
     const p = Object.assign({ g: '', idx: 0, x: 0, y: 0, poly: null, col: '#ccc', edge: null, lay: 3, kind: 'fly', tb: Infinity,
       vx: 0, vy: 0, w: 0, fy: Infinity, fy2: Infinity, drop: Infinity, fade: Infinity, hid: false, hh: 1, tl: Infinity,
-      dec: null, decp: null, deco: null, ck: null, ckT: Infinity }, o);
-    if (p.poly) { let m = 0; for (let i = 1; i < p.poly.length; i += 2) m = Math.max(m, Math.abs(p.poly[i])); p.hh = m; }
+      dec: null, decp: null, deco: null, ck: null, ckT: Infinity, hw: 1, ex: 0, lie: false }, o);
+    if (p.poly) {
+      let my = 0, mx = 0;
+      for (let i = 0; i < p.poly.length; i += 2) { mx = Math.max(mx, Math.abs(p.poly[i])); my = Math.max(my, Math.abs(p.poly[i + 1])); }
+      p.hh = my; p.hw = mx; p.ex = mx;
+      // 縦長の柱・壁は、縦に立ったまま着地せず、横になって落ち着く（高さは短い辺、横の広がりは長い辺）
+      if ((p.g === 'dojo' || p.g === 'stand') && my > mx * 1.15) { p.lie = true; p.hh = mx; p.ex = my; }
+    }
     P.push(p);
     return p;
   }
@@ -260,6 +336,18 @@ function buildShow(S, seed) {
     p.fy = GY - p.hh; let tl = landT(p);
     const f = floorAt(p.x + p.vx * (isFinite(tl) ? tl : 0), st);
     p.fy = f - p.hh; p.tl = landT(p);
+    return p;
+  }
+  // 崩れた物を、着地後の本人（足もと）の上に落とさない。本人のいる範囲にかかるなら、その手前か向こうへ落ちるように飛ばし直す
+  const RC = mkRng(CFG.seed + 7), ZC = KX + 8, ZR = 36;
+  function clear(p, st, fixed) {
+    for (let n = 0; n < 2 && isFinite(p.tl); n++) {
+      const xl = p.x + p.vx * (p.tl + 0.06), need = ZR + p.ex;
+      if (Math.abs(xl - ZC) >= need) break;
+      const side = Math.abs(p.x - ZC) > 6 ? Math.sign(p.x - ZC) : (p.vx < 0 ? -1 : 1);
+      p.vx = (ZC + side * (need + 3 + RC() * 14) - p.x) / (p.tl + 0.06);
+      if (fixed) p.tl = landT(p); else settle(p, st);
+    }
     return p;
   }
   const puff = (x, y, r0, r1, tb, life, col) => add({ g: 'puff', kind: 'puff', x, y, r0, r1, tb, life, vy: -10, col, lay: 5, hid: true });
@@ -292,7 +380,7 @@ function buildShow(S, seed) {
   for (const bx of [TX - TW / 2 - 0.5, TX + TW / 2 - 6.5]) {
     const p = add({ g: 'stand', x: bx + 3.5, y: (TB + GY) / 2, poly: box(7, GY - TB), col: '#b3a99a', edge: '#6e6658', deco: 'stone', tb: T(3, 0.97 + rr(0, 0.1)),
       vx: rr(-10, 10), vy: rr(-10, 10), w: rr(-1.5, 1.5) });
-    p.fy = BY - p.hh; p.tl = landT(p);
+    p.fy = BY - p.hh; p.tl = landT(p); clear(p, 3, true);
   }
   // ---- 道場の床（段階 3 で瓦の下が抜ける。残りは段階 4 の崩壊で）----
   for (let x = DL; x < DR - 0.5;) {
@@ -300,7 +388,7 @@ function buildShow(S, seed) {
     const cx = x + w / 2, hole = cx > HX0 && cx < HX1, st = hole ? 3 : 4;
     const p = add({ g: 'slab', x: cx, y: GY + 5, poly: box(w, 10), col: '#e0b068', edge: '#8a6a3a', deco: 'floor', tb: hole ? T(3, 0.95 + rr(0, 0.25)) : T(4, 1.75 + rr(0, 0.3)),
       vx: (cx - KX) * 0.3 + rr(-10, 10), vy: hole ? rr(-20, 30) : -rr(10, 60), w: rr(-2, 2) });
-    p.fy = BY - p.hh; p.tl = landT(p);
+    p.fy = BY - p.hh; p.tl = landT(p); clear(p, 3, true);
     x += w;
   }
   if (S >= 3) { shake(0.95, 8, 0.6); flash(0.95, 0.18); cue(0.95, 'floor'); cue(0.98, 'rumble'); cue(FALL_T + Math.sqrt(2 * (BY - GY) / GRAV), 'thud'); shake(FALL_T + 0.46, 7, 0.4);
@@ -308,7 +396,7 @@ function buildShow(S, seed) {
 
   // ---- 道場の建物（段階 4）：屋根が吹き飛び、壁が崩れる ----
   const dtb = () => T(4, 1.85 + rr(0, 0.3));
-  const dojoFly = (p, vx, vy, w) => { p.vx = vx; p.vy = vy; p.w = w; settle(p, 4); return p; };
+  const dojoFly = (p, vx, vy, w) => { p.vx = vx; p.vy = vy; p.w = w; settle(p, 4); return clear(p, 4); };
   for (let c = 0; c < 6; c++) for (let r = 0; r < 2; r++) {     // 奥の壁
     const cw = (DR - DL) / 6, cx = DL + cw * (c + 0.5), cy = 8 + 33 + 66 * r;
     const col = r === 0 ? ((c + r) % 2 ? '#fbf1d6' : '#f8edcf') : ((c + r) % 2 ? '#ebc98c' : '#e6c384');
@@ -330,11 +418,30 @@ function buildShow(S, seed) {
   }
   const rx = []; for (let n = 0; n <= 8; n++) rx.push(-92 + (182 + 92) * n / 8);
   const rtop = x => (x <= -30 ? lerp(12, -42, (x + 92) / 62) : x >= 120 ? lerp(-42, 12, (x - 120) / 62) : -42);
+  // 屋根：瓦の段ごとの薄い板に分けて吹き飛ばす（大きな 1 枚だと縦長の塊になって落ち、本人に重なってしまう）
+  const clipHalf = (poly, f) => {      // 多角形のうち f(x, y) >= 0 の側だけ残す
+    const out = [];
+    for (let i = 0; i < poly.length; i += 2) {
+      const ax = poly[i], ay = poly[i + 1], bx = poly[(i + 2) % poly.length], by = poly[(i + 3) % poly.length], fa = f(ax, ay), fb = f(bx, by);
+      if (fa >= 0) out.push(ax, ay);
+      if ((fa >= 0) !== (fb >= 0)) { const u = fa / (fa - fb); out.push(ax + (bx - ax) * u, ay + (by - ay) * u); }
+    }
+    return out;
+  };
   for (let n = 0; n < 8; n++) {                                  // 屋根（吹き飛ぶ）
-    const a = rx[n], b = rx[n + 1], cx = (a + b) / 2, ymin = Math.min(rtop(a), rtop(b)), cy = (ymin + 12) / 2;
-    dojoFly(add({ g: 'dojo', x: cx, y: cy, poly: [a - cx, rtop(a) - cy, b - cx, rtop(b) - cy, b - cx, 12 - cy, a - cx, 12 - cy],
-      col: n % 2 ? '#c0573f' : '#b5503c', edge: '#8a3a2a', lay: 4, tb: T(4, 1.65 + rr(0, 0.12)) }),
-      (cx - 45) * 0.25 + rr(-14, 14), -rr(200, 260), rr(-4, 4) + (cx < 45 ? -1 : 1));
+    const a = rx[n], b = rx[n + 1], ta = rtop(a), tb2 = rtop(b), ymin = Math.min(ta, tb2);
+    const rows = Math.max(1, Math.ceil((12 - ymin) / 13)), rh = (12 - ymin) / rows;
+    for (let r = 0; r < rows; r++) {
+      const y0 = ymin + r * rh, y1 = y0 + rh;
+      const q = clipHalf([a, y0, b, y0, b, y1, a, y1], (x, y) => y - lerp(ta, tb2, (x - a) / (b - a)));
+      if (q.length < 6) continue;
+      let x0 = 1e9, x1 = -1e9, v0 = 1e9, v1 = -1e9;
+      for (let i = 0; i < q.length; i += 2) { x0 = Math.min(x0, q[i]); x1 = Math.max(x1, q[i]); v0 = Math.min(v0, q[i + 1]); v1 = Math.max(v1, q[i + 1]); }
+      if (v1 - v0 < 0.6) continue;
+      const cx = (x0 + x1) / 2, cy = (v0 + v1) / 2, poly = q.map((v, i) => v - (i % 2 ? cy : cx));
+      dojoFly(add({ g: 'dojo', x: cx, y: cy, poly, col: (n + r) % 2 ? '#c0573f' : '#b5503c', edge: '#8a3a2a', lay: 4, tb: T(4, 1.65 + rr(0, 0.12)) }),
+        (cx - 45) * 0.25 + rr(-14, 14), -rr(200, 260), rr(-4, 4) + (cx < 45 ? -1 : 1));
+    }
   }
   if (S >= 4) { shake(1.7, 12, 0.8); flash(1.7, 0.25); cue(1.65, 'whoosh'); cue(1.8, 'collapse'); cue(1.9, 'rumble');
     for (let n = 0; n < 4; n++) puff(-60 + n * 70, GY - 8, 14, 46, 1.9 + n * 0.06, 0.8, '#f5ead0'); }
@@ -417,11 +524,16 @@ function buildShow(S, seed) {
   if (S >= 4) cue(1.8, 'crowd');
   if (S >= 5) cue(2.7, 'crowd');
   if (S >= 7) cue(3.5, 'gong');
+  // ---- 段階 8〜10：カメラが引いて、大陸が裂け、地球にひびが入り、地球が割れる ----
+  const SPT = CFG.sp;
+  if (S >= 8) { cue(3.85, 'rise'); cue(SPT.run[0], 'rift'); cue(SPT.open[0], 'quake'); shake(SPT.run[0], 5, 0.5); shake(SPT.open[0], 14, 0.8); flash(SPT.open[0], 0.3); }
+  if (S >= 9) { cue(5.35, 'space'); cue(5.9, 'earthcrack'); shake(5.9, 9, 0.7); flash(5.9, 0.45); }
+  if (S >= 10) { cue(6.5, 'earthsplit'); cue(7.2, 'twinkle'); shake(6.55, 18, 1.0); flash(6.55, 0.8); }
 
   // ---- 大きな文字・音の合図 ----
   const caps = [];
   const k0 = S >= 2 ? 2 : S;
   for (let k = k0; k <= S; k++) caps.push({ t: CFG.showCaps[k][1], text: CFG.showCaps[k][0] });
   cues.sort((a, b) => a.t - b.t);
-  return { stage: S, seed, dur: CFG.showSecs[S], pieces: P, cues, shakes, flashes, caps, bubbles: bubblesFor(S) };
+  return { stage: S, seed, dur: showDur(S), speed: CFG.showSpeed[S], pieces: P, cues, shakes, flashes, caps, bubbles: bubblesFor(S) };
 }

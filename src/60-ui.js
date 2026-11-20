@@ -60,21 +60,22 @@ function retry() {
 let REC = loadRec();   // 自己ベストと見た段階（保存できないときはこの中だけで動く）
 const nbs = parts => parts.map(p => '<span class="nb">' + p + '</span>').join('');
 
+const sealText = S => (S >= 10 ? '宇宙' : S === 9 ? '出禁' : S === 8 ? '永久' : S === 7 ? '破門' : S === 0 ? '再審' : '師範');   // 認定証の印
 function fillCert(S, n, r) {
   const el = $('cert'), ban = S >= 7, rank = rankFor(S);
   el.classList.toggle('ban', ban);
   $('cTitle').textContent = certTitle(S);
   $('cRank').textContent = rank; $('cRank').style.fontSize = (rank.length >= 4 ? 11.5 : 14) + 'cqw';
-  $('cSeal').textContent = ban ? '破門' : S === 0 ? '再審' : '師範';
+  $('cSeal').textContent = sealText(S);
   $('cStage').innerHTML = nbs(CFG.stageNames[S].split(' '));
   $('cVerdict').innerHTML = nbs(VERDICTS[S]);
   $('cTiles').textContent = tileText(S);
   $('cCount').textContent = n;
   $('cNewC').style.display = r.newCount ? '' : 'none';
   $('cBest').innerHTML = nbs(['自己ベスト', stageLabel(REC.bestStage) + '・' + REC.bestCount + ' 回' + (r.newStage || r.newCount ? '（更新！）' : '')]).replace('</span><span', '</span>　<span');
-  $('cSeenH').textContent = '見た段階　' + seenCount(REC) + ' / 8';
+  $('cSeenH').textContent = '見た段階　' + seenCount(REC) + ' / ' + NST;
   let h = '';
-  for (let i = 0; i < 8; i++) {
+  for (let i = 0; i < NST; i++) {
     const seen = REC.seen[i], cls = 'chip' + (seen ? ' on' : '') + (i === S ? ' cur' : '') + (r.newSeen.indexOf(i) >= 0 ? ' nw' : '');
     h += '<span class="' + cls + '">' + (seen ? stageLabel(i) : '？？？') + '</span>';
   }
@@ -129,12 +130,18 @@ function makeShareImage() {
       c.fillStyle = '#bfe6ff'; c.fillRect(px, py, pw, ph);
       try {
         const free = RESL.on ? (RESL.portrait ? { w: W, h: RESL.y } : { w: RESL.x, h: H }) : { w: W, h: H };
+        if (S >= 9) {   // 宇宙から見た地球は、認定証に隠れない範囲をそのまま入れる（切り取らない）
+          c.fillStyle = '#070b24'; c.fillRect(px, py, pw, ph);
+          const k = cv.width / W, sc = Math.min(pw / free.w, ph / free.h), dw = free.w * sc, dh = free.h * sc;
+          c.drawImage(cv, 0, 0, free.w * k, free.h * k, px + (pw - dw) / 2, py + (ph - dh) / 2, dw, dh);
+        } else {
         const v = CAMV, sy0 = S >= 3 ? BY : GY, a = pw / ph;
         const sx = (KX + 1 - v.x0) * v.k, sy = (sy0 - 28 - v.y0) * v.k;
         const cw = Math.min(free.w, free.h * a), ch = cw / a;
         const x0 = clamp(sx - cw / 2, 0, Math.max(0, free.w - cw)), y0 = clamp(sy - ch / 2, 0, Math.max(0, free.h - ch));
         const k = cv.width / W;
         c.drawImage(cv, x0 * k, y0 * k, cw * k, ch * k, px, py, pw, ph);
+        }
       } catch (_) { /* 絵が取れなくても文字のカードは作る */ }
       c.restore();
       c.strokeStyle = ban ? '#8a8070' : '#7a4a22'; c.lineWidth = 10; rr(c, px, py, pw, ph, 28); c.stroke();
@@ -149,12 +156,12 @@ function makeShareImage() {
       fitText(c, rankFor(S), 140, ty + 316, 560, 150, '900', ban ? '#26222a' : '#c8321f', 'left');
       c.save(); c.translate(Wd - 220, ty + 250); c.rotate(-0.24);
       c.strokeStyle = ban ? '#26222a' : '#c8321f'; c.lineWidth = 10; c.beginPath(); c.arc(0, 0, 88, 0, 6.283); c.stroke();
-      fitText(c, ban ? '破門' : S === 0 ? '再審' : '師範', 0, 22, 120, 62, '900', ban ? '#26222a' : '#c8321f');
+      fitText(c, sealText(S), 0, 22, 120, 62, '900', ban ? '#26222a' : '#c8321f');
       c.restore();
       fitText(c, '「' + stageLabel(S) + '」', Wd / 2, ty + 430, 800, 88, '900', '#2b2b3a');
       fitText(c, '割った瓦 ' + tileText(S), Wd / 2, ty + 510, 800, 48, 'bold', '#3a2a1c');
       fitText(c, '連打 ' + n + ' 回', Wd / 2, ty + 570, 800, 54, 'bold', '#c8321f');
-      fitText(c, '自己ベスト ' + stageLabel(REC.bestStage) + '・' + REC.bestCount + ' 回　見た段階 ' + seenCount(REC) + '/8', Wd / 2, ty + 625, 840, 36, 'bold', '#7a6a58');
+      fitText(c, '自己ベスト ' + stageLabel(REC.bestStage) + '・' + REC.bestCount + ' 回　見た段階 ' + seenCount(REC) + '/' + NST, Wd / 2, ty + 625, 840, 36, 'bold', '#7a6a58');
       fitText(c, CFG.shareUrl, Wd / 2, Ht - 80, 860, 34, 'normal', ban ? '#d8d0c0' : '#5a3d1e');
       cc.toBlob(b => resolve(b), 'image/png');
     } catch (_) { resolve(null); }
