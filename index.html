@@ -1,0 +1,591 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover,user-scalable=no">
+<title>瓦割り（仮）</title>
+<style>
+*{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+html,body{margin:0;height:100%;overflow:hidden;background:#d9c196;
+  font-family:"Hiragino Maru Gothic ProN","Yu Gothic UI","Meiryo",sans-serif;color:#2b2b3a;
+  user-select:none;-webkit-user-select:none;-webkit-touch-callout:none;touch-action:none;
+  word-break:auto-phrase;line-break:strict;text-wrap:balance}
+body{display:flex;align-items:center;justify-content:center}
+.nb{display:inline-block;white-space:nowrap}
+
+/* 絵は画面いっぱい。遊ぶ場所は縦9:16で中央 */
+#cv{position:fixed;inset:0;width:100%;height:100%;display:block;touch-action:none}
+/* 遊ぶ場所の枠。単位は cqw（枠の幅の1%）。文字の置き場所に使うだけで、触れるのは下の絵 */
+#stage{position:relative;container-type:size;
+  width:min(100vw,calc(100dvh*9/16));aspect-ratio:9/16;pointer-events:none}
+#stage>*{pointer-events:none}
+
+/* 上：残り時間 / 下：連打数 */
+#hudTop{position:absolute;left:0;right:0;top:6cqw;text-align:center;font-weight:900;color:#fff;
+  -webkit-text-stroke:1.2cqw #7a1f1a;paint-order:stroke fill;text-shadow:0 1cqw 0 #7a1f1a;
+  font-size:13cqw;line-height:1;font-variant-numeric:tabular-nums;opacity:0}
+#hudTop small{font-size:5cqw;margin-left:1.2cqw;-webkit-text-stroke-width:.8cqw}
+#hudTop.on{opacity:1}
+#hudTop.low{color:#ffe14d}
+#hudBot{position:absolute;left:0;right:0;bottom:7cqw;text-align:center;font-weight:bold;color:#fff;
+  font-size:5.6cqw;text-shadow:0 .6cqw 0 #0007,0 0 2cqw #0007;font-variant-numeric:tabular-nums;opacity:0}
+#hudBot.on{opacity:1}
+#hudBot b{font-size:7cqw}
+
+/* 「はじめ」「せいっ」 */
+#call{position:absolute;left:0;right:0;top:34cqw;text-align:center;font-weight:900;font-size:21cqw;color:#fff;
+  -webkit-text-stroke:2cqw #7a1f1a;paint-order:stroke fill;text-shadow:0 1.6cqw 0 #7a1f1a;
+  opacity:0;transform:scale(.6)}
+#call.on{animation:call .5s cubic-bezier(.3,1.5,.5,1) forwards}
+@keyframes call{from{opacity:0;transform:scale(.4)}to{opacity:1;transform:scale(1)}}
+
+/* タイトル */
+#title{position:absolute;left:5cqw;right:5cqw;top:40cqw;z-index:20;text-align:center;
+  display:flex;flex-direction:column;align-items:center;gap:3cqw}
+#title.hide{display:none}
+#title .t1{font-size:4.6cqw;font-weight:bold;color:#fff;background:#8a1f1a;border-radius:5cqw;padding:.8cqw 4.5cqw;letter-spacing:.6cqw}
+#title .t2{font-size:19cqw;font-weight:900;line-height:1.1;color:#fff;
+  -webkit-text-stroke:1.6cqw #5a2a14;paint-order:stroke fill;text-shadow:0 1.4cqw 0 #5a2a14,0 2.2cqw 3cqw #0004}
+#title .t3{font-size:5.2cqw;font-weight:bold;color:#5a2a14;background:#fffd;border-radius:3cqw;padding:1cqw 4cqw}
+#title .t4{margin-top:3cqw;font-size:6cqw;font-weight:bold;color:#fff;background:#d2382f;border-radius:6cqw;
+  padding:2cqw 8cqw;box-shadow:0 1.2cqw 0 #8f221c;animation:blink 1.1s ease-in-out infinite}
+@keyframes blink{50%{transform:scale(1.07)}}
+
+/* 結果（仮） */
+#result{position:absolute;left:8cqw;right:8cqw;top:30cqw;z-index:30;padding:6cqw 5cqw;
+  background:#fffdf2;border:.7cqw solid #5a2a14;border-radius:2cqw;box-shadow:0 2cqw 0 #3a1a0a,0 3cqw 6cqw #0006;
+  display:none;flex-direction:column;align-items:center;gap:2.4cqw;text-align:center}
+#result.show{display:flex;animation:pop .3s cubic-bezier(.3,1.5,.5,1)}
+@keyframes pop{from{transform:scale(.7);opacity:0}to{transform:none;opacity:1}}
+#result .lb{font-size:4.4cqw;color:#7a6a58;font-weight:bold}
+#result .stage{font-size:11cqw;font-weight:900;line-height:1.15;color:#d2382f}
+#result .cnt{font-size:6cqw;font-weight:bold;color:#2b2b3a;font-variant-numeric:tabular-nums}
+#result .again{margin-top:2cqw;font-size:5.4cqw;font-weight:bold;color:#fff;background:#d2382f;border-radius:5cqw;
+  padding:1.6cqw 7cqw;box-shadow:0 1cqw 0 #8f221c;opacity:.35}
+#result.ready .again{opacity:1;animation:blink 1.1s ease-in-out infinite}
+</style>
+</head>
+<body>
+<canvas id="cv"></canvas>
+<div id="stage">
+  <div id="hudTop"><span id="tLeft">5.0</span><small>秒</small></div>
+  <div id="hudBot"><b id="cNum">0</b> 回</div>
+  <div id="call"></div>
+  <div id="title">
+    <div class="t2"><span class="nb">瓦割り</span></div>
+    <div class="t3"><span class="nb">5秒で</span><span class="nb">どこまで 割れる？</span></div>
+    <div class="t4">タップで スタート</div>
+  </div>
+  <div id="result">
+    <div class="lb">到達</div>
+    <div class="stage" id="rStage"></div>
+    <div class="cnt"><span id="rCnt">0</span> 回</div>
+    <div class="again">タップで もう一回</div>
+  </div>
+</div>
+<script>
+// ===== 調整用の数値 =====
+const CFG = {
+  h: 1 / 120,            // 検証用の固定刻み
+  readySecs: 0.6,        // 「はじめ」から連打の開始まで
+  duration: 5,           // 連打の長さ（秒）。「はじめ」のあとに固定
+  finishSecs: 1.2,       // 「せいっ」から結果まで（Phase 2 で見せ場に置き換える）
+  retryWait: 0.5,        // 結果が出てから再挑戦を受け付けるまで（誤タップ防止）
+  maxPerSec: 25,         // 1秒に数える連打の上限（直近1秒の窓）
+  tiles: 20,             // 積む瓦の枚数
+
+  // 段階 i になる最低の連打数（段階 0〜7）。本人のテストプレイで調整
+  levelAt: [10, 20, 30, 40, 50, 60, 70],
+  stageNames: ['ひびだけ', '瓦 数枚', '瓦 全部', '道場の床', '道場 全壊', '町内 全壊', '山 真っ二つ', 'クレーター'],
+
+  tierEvery: 10,         // 連打 10 回ごとにオーラが一段派手になる
+  maxTier: 7,
+};
+// ===== ゲームのロジック（画面を使わない）=====
+const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
+
+// 連打数 → 段階（0〜7）
+function stageFor(count) {
+  let s = 0;
+  for (let i = 0; i < CFG.levelAt.length; i++) if (count >= CFG.levelAt[i]) s = i + 1;
+  return s;
+}
+// 連打数 → オーラの段（10 回ごとに一段）
+function tierFor(count) { return Math.min(CFG.maxTier, Math.floor(count / CFG.tierEvery)); }
+
+// キー入力を数えてよいか（スペース・Enter、押しっぱなしの連続入力は数えない）
+function acceptKey(e) {
+  if (e.repeat) return false;
+  return e.key === ' ' || e.key === 'Enter' || e.code === 'Space';
+}
+
+const Game = {
+  mode: 'title',   // title → ready → play → finish → over
+  t: 0, readyT: 0, finT: 0, overT: 0,
+  count: 0, hits: [],      // hits: 数えた時刻（直近1秒の窓の判定に使う）
+  events: [],
+
+  reset() {
+    this.mode = 'title';
+    this.t = 0; this.readyT = 0; this.finT = 0; this.overT = 0;
+    this.count = 0; this.hits = [];
+    this.events = [];
+  },
+
+  begin() {
+    if (this.mode !== 'title') return;
+    this.mode = 'ready'; this.readyT = 0;
+    this.events.push({ type: 'ready' });
+  },
+
+  stage() { return stageFor(this.count); },
+  tier() { return tierFor(this.count); },
+  remaining() { return Math.max(0, CFG.duration - this.t); },
+  canRetry() { return this.mode === 'over' && this.overT >= CFG.retryWait; },
+
+  // 連打 1 回。'hit' 数えた / 'limited' 速すぎて数えない / 'ignored' 受付外（はじめ前・締め切り後）
+  tap() {
+    if (this.mode !== 'play' || this.t >= CFG.duration - 1e-9) return 'ignored';
+    const h = this.hits;
+    while (h.length && this.t - h[0] >= 1 - 1e-9) h.shift();
+    if (h.length >= CFG.maxPerSec) return 'limited';
+    h.push(this.t);
+    this.count++;
+    this.events.push({ type: 'hit', count: this.count, tier: this.tier(), tierUp: this.count % CFG.tierEvery === 0 && this.count / CFG.tierEvery <= CFG.maxTier });
+    return 'hit';
+  },
+
+  step(dt) {
+    if (this.mode === 'ready') {
+      this.readyT += dt;
+      if (this.readyT >= CFG.readySecs) { this.mode = 'play'; this.t = 0; this.hits = []; this.events.push({ type: 'start' }); }
+      return;
+    }
+    if (this.mode === 'play') {
+      this.t += dt;
+      if (this.t >= CFG.duration - 1e-9) {
+        this.t = CFG.duration;
+        this.mode = 'finish'; this.finT = 0;
+        this.events.push({ type: 'end', count: this.count, stage: this.stage() });
+      }
+      return;
+    }
+    if (this.mode === 'finish') {
+      this.finT += dt;
+      if (this.finT >= CFG.finishSecs) { this.mode = 'over'; this.overT = 0; this.events.push({ type: 'over' }); }
+      return;
+    }
+    if (this.mode === 'over') this.overT += dt;
+  },
+};
+// ===== 描画（Canvas 2D。単位は「遊ぶ場所の幅 = 100」）=====
+const $ = id => document.getElementById(id);
+const cv = $('cv'), cx = cv.getContext('2d');
+let W = 0, H = 0, DPR = 1, U = 1, OX = 0, OY = 0;
+let EX0 = 0, EX1 = 100, EY0 = 0, EY1 = 177.78;   // 画面いっぱいの範囲（遊ぶ場所の単位で）
+let nowT = 0;
+
+function resize() {
+  DPR = Math.min(window.devicePixelRatio || 1, 2);
+  W = window.innerWidth; H = window.innerHeight;
+  cv.width = Math.round(W * DPR); cv.height = Math.round(H * DPR);
+  const sw = Math.min(W, H * 9 / 16);
+  U = sw / 100; OX = (W - sw) / 2; OY = (H - sw * 16 / 9) / 2;
+  EX0 = -OX / U; EX1 = 100 + OX / U; EY0 = -OY / U; EY1 = 177.78 + OY / U;
+}
+
+// 配置（仮の背景）
+const GY = 140;                 // 床の高さ
+const KX = 38;                  // 空手家の位置
+const TX = 74, TW = 30, TP = 3, TH = 2.7, TB = 128;   // 瓦の中心x・幅・ピッチ・厚み・いちばん下の y
+const TIER_COL = ['#ffffff', '#fff2a8', '#ffd84a', '#ffa63a', '#ff6a2a', '#ff3d4a', '#e63cc8', '#7a5cff'];
+
+// ---- 演出の状態 ----
+const V = { kick: 0, bounce: 0, pulse: 0, aura: 12, flash: 0, slam: 0 };
+const sparks = [], rings = [];
+const SPARK_MAX = 90;
+
+function rr(c, x, y, w, h, r) {
+  c.beginPath();
+  c.moveTo(x + r, y); c.arcTo(x + w, y, x + w, y + h, r); c.arcTo(x + w, y + h, x, y + h, r);
+  c.arcTo(x, y + h, x, y, r); c.arcTo(x, y, x + w, y, r); c.closePath();
+}
+const lerp = (a, b, k) => a + (b - a) * k;
+function mix(c1, c2, k) {
+  const p = c => [1, 3, 5].map(i => parseInt(c.slice(i, i + 2), 16));
+  const a = p(c1), b = p(c2);
+  return 'rgb(' + a.map((v, i) => Math.round(lerp(v, b[i], k))).join(',') + ')';
+}
+
+// 押した反応（見た目）
+function onHit(e) {
+  V.kick = Math.min(1.6, V.kick + 0.5);
+  V.bounce = 1; V.pulse = 1;
+  const n = e.tier >= 4 ? 3 : 2;
+  for (let i = 0; i < n && sparks.length < SPARK_MAX; i++) {
+    const a = -Math.PI / 2 + (Math.random() - 0.5) * 2.6, sp = 18 + Math.random() * 26 + e.tier * 3;
+    sparks.push({ x: KX + 6 + (Math.random() - 0.5) * 6, y: 78 + Math.random() * 8, vx: Math.cos(a) * sp, vy: Math.sin(a) * sp, life: 0, max: 0.35 + Math.random() * 0.3, col: TIER_COL[e.tier], r: 0.9 + Math.random() * 0.9 });
+  }
+  if (e.tierUp) {
+    rings.push({ life: 0, max: 0.6, col: TIER_COL[e.tier] });
+    V.flash = Math.min(0.5, 0.12 + e.tier * 0.04);
+  }
+}
+function onSlam() { V.slam = 1; V.flash = 0.6; V.kick = 3; }
+function resetVisual() { V.kick = 0; V.bounce = 0; V.pulse = 0; V.aura = 12; V.flash = 0; V.slam = 0; sparks.length = 0; rings.length = 0; }
+
+function updateVisual(dt) {
+  V.kick *= Math.exp(-dt * 7);
+  V.bounce *= Math.exp(-dt * 12);
+  V.pulse *= Math.exp(-dt * 8);
+  V.flash *= Math.exp(-dt * 6);
+  V.slam *= Math.exp(-dt * 4);
+  const target = Game.mode === 'title' ? 12 : 14 + Game.count * 0.55;
+  V.aura += (target - V.aura) * (1 - Math.exp(-dt * 10));
+  for (let i = sparks.length - 1; i >= 0; i--) {
+    const s = sparks[i]; s.life += dt;
+    if (s.life >= s.max) { sparks.splice(i, 1); continue; }
+    s.vy += 60 * dt; s.x += s.vx * dt; s.y += s.vy * dt;
+  }
+  for (let i = rings.length - 1; i >= 0; i--) { rings[i].life += dt; if (rings[i].life >= rings[i].max) rings.splice(i, 1); }
+}
+
+function twoBone(sx, sy, tx, ty, l1, l2) {
+  const dx = tx - sx, dy = ty - sy, d0 = Math.hypot(dx, dy) || 0.01;
+  const d = clamp(d0, Math.abs(l1 - l2) + 0.1, l1 + l2 - 0.05);
+  const ux = dx / d0, uy = dy / d0;
+  const a = (l1 * l1 - l2 * l2 + d * d) / (2 * d), h = Math.sqrt(Math.max(0, l1 * l1 - a * a));
+  return { ex: sx + ux * a + uy * h, ey: sy + uy * a - ux * h, hx: sx + ux * d, hy: sy + uy * d };
+}
+
+function drawBackground() {
+  const c = cx;
+  let g = c.createLinearGradient(0, EY0, 0, GY);
+  g.addColorStop(0, '#f6ecd2'); g.addColorStop(1, '#e6d2a4');
+  c.fillStyle = g; c.fillRect(EX0, EY0, EX1 - EX0, GY - EY0 + 0.5);
+  // 柱
+  c.fillStyle = '#8a5a2e';
+  for (let x = -Math.ceil(-EX0 / 34) * 34 + 8; x < EX1; x += 34) c.fillRect(x, EY0, 3.2, GY - EY0);
+  c.fillStyle = '#6e4521'; c.fillRect(EX0, 44, EX1 - EX0, 2.4);   // 長押
+  // 床
+  g = c.createLinearGradient(0, GY, 0, EY1);
+  g.addColorStop(0, '#c99a52'); g.addColorStop(1, '#a87a38');
+  c.fillStyle = g; c.fillRect(EX0, GY, EX1 - EX0, EY1 - GY + 0.5);
+  c.strokeStyle = '#8f6a30'; c.lineWidth = 0.35;
+  c.beginPath();
+  for (let y = GY + 7; y < EY1; y += 9 + (y - GY) * 0.12) { c.moveTo(EX0, y); c.lineTo(EX1, y); }
+  c.stroke();
+  c.fillStyle = '#6e4521'; c.fillRect(EX0, GY - 1.2, EX1 - EX0, 1.4);
+}
+
+function drawAura() {
+  const c = cx, t = Game.tier(), col = TIER_COL[t];
+  if (Game.mode === 'title' || Game.mode === 'ready') return;
+  const ax = KX + 2, ay = 108, R = V.aura * (1 + V.pulse * 0.12);
+  c.save(); c.globalCompositeOperation = 'lighter';
+  const g = c.createRadialGradient(ax, ay, 0, ax, ay, R);
+  g.addColorStop(0, col + 'cc'); g.addColorStop(0.5, col + '55'); g.addColorStop(1, col + '00');
+  c.fillStyle = g; c.beginPath(); c.arc(ax, ay, R, 0, 6.283); c.fill();
+  if (t >= 1) {   // 10 回ごとに一段派手に：光の筋
+    const n = 6 + t * 2, rot = nowT * (0.6 + t * 0.25);
+    c.fillStyle = col + '40';
+    for (let i = 0; i < n; i++) {
+      const a = rot + i * 6.283 / n, w = 0.11, rl = R * (1.15 + 0.1 * Math.sin(nowT * 9 + i));
+      c.beginPath(); c.moveTo(ax + Math.cos(a - w) * R * 0.55, ay + Math.sin(a - w) * R * 0.55);
+      c.lineTo(ax + Math.cos(a) * rl, ay + Math.sin(a) * rl);
+      c.lineTo(ax + Math.cos(a + w) * R * 0.55, ay + Math.sin(a + w) * R * 0.55); c.fill();
+    }
+  }
+  for (const r of rings) {
+    const p = r.life / r.max;
+    c.strokeStyle = r.col; c.globalAlpha = 1 - p; c.lineWidth = 1.6 * (1 - p) + 0.3;
+    c.beginPath(); c.arc(ax, ay, R * (0.7 + p * 1.1), 0, 6.283); c.stroke();
+  }
+  c.restore();
+}
+
+function drawKarateka() {
+  const c = cx, m = Game.mode;
+  const by = V.bounce * 1.2 + (m === 'play' ? Math.sin(nowT * 30) * 0.15 * Math.min(1, Game.count / 20) : 0);   // 押すたびの沈み
+  const skin = mix('#f6cfa6', '#ff7a5a', clamp(Game.count / 70, 0, 1));
+  c.save(); c.translate(0, by);
+  // 影
+  c.save(); c.translate(0, -by); c.fillStyle = '#0003'; c.beginPath(); c.ellipse(KX + 1, GY + 1.5, 15, 2.6, 0, 0, 6.283); c.fill(); c.restore();
+  c.lineCap = 'round'; c.lineJoin = 'round';
+  const white = '#fbfbf6', edge = '#a9a392';
+  // 脚（馬立ち）
+  c.strokeStyle = edge; c.lineWidth = 8.4; c.beginPath(); c.moveTo(KX - 3, 122); c.lineTo(KX - 10, GY - 1); c.moveTo(KX + 5, 122); c.lineTo(KX + 12, GY - 1); c.stroke();
+  c.strokeStyle = white; c.lineWidth = 7; c.beginPath(); c.moveTo(KX - 3, 122); c.lineTo(KX - 10, GY - 1); c.moveTo(KX + 5, 122); c.lineTo(KX + 12, GY - 1); c.stroke();
+  c.fillStyle = skin; c.beginPath(); c.ellipse(KX - 11, GY - 0.3, 4, 1.6, 0, 0, 6.283); c.ellipse(KX + 13, GY - 0.3, 4, 1.6, 0, 0, 6.283); c.fill();
+  // 後ろの腕（腰に）
+  c.strokeStyle = edge; c.lineWidth = 6.6; c.beginPath(); c.moveTo(KX - 5, 105); c.lineTo(KX - 11, 114); c.lineTo(KX - 5, 118); c.stroke();
+  c.strokeStyle = white; c.lineWidth = 5.4; c.beginPath(); c.moveTo(KX - 5, 105); c.lineTo(KX - 11, 114); c.lineTo(KX - 5, 118); c.stroke();
+  // 胴
+  c.fillStyle = white; c.strokeStyle = edge; c.lineWidth = 0.7;
+  rr(c, KX - 8, 99, 17, 25, 4.5); c.fill(); c.stroke();
+  c.strokeStyle = edge; c.lineWidth = 0.6; c.beginPath(); c.moveTo(KX - 1, 99); c.lineTo(KX + 4, 110); c.lineTo(KX + 7, 99); c.stroke();   // 襟
+  c.fillStyle = '#26262e'; c.fillRect(KX - 8.3, 118.5, 17.6, 3.2);   // 黒帯
+  // 頭
+  const hx = KX + 1.5, hy = 91;
+  c.fillStyle = skin; c.strokeStyle = '#b98a62'; c.lineWidth = 0.6;
+  c.beginPath(); c.arc(hx, hy, 7, 0, 6.283); c.fill(); c.stroke();
+  c.fillStyle = '#26262e'; c.beginPath(); c.arc(hx - 0.6, hy - 1.2, 7.3, Math.PI * 1.02, Math.PI * 2.0); c.fill();
+  c.fillStyle = '#fff'; c.fillRect(hx - 7.2, hy - 2.6, 14.4, 2.2);   // はちまき
+  c.fillStyle = '#d2382f'; c.beginPath(); c.arc(hx, hy - 1.5, 1.1, 0, 6.283); c.fill();
+  c.fillStyle = '#26262e';
+  const shout = m === 'play' || m === 'finish';
+  c.beginPath(); c.ellipse(hx + 3.2, hy + 1.2, 0.9, shout ? 0.6 : 1, 0, 0, 6.283); c.fill();   // 目
+  c.strokeStyle = '#26262e'; c.lineWidth = 0.8; c.beginPath(); c.moveTo(hx + 1.8, hy - 0.6); c.lineTo(hx + 5, hy + 0.2); c.stroke();   // まゆ
+  if (shout) { c.fillStyle = '#7a1f1a'; c.beginPath(); c.ellipse(hx + 3.2, hy + 4.4, 1.7, 1.2 + Math.min(1, V.pulse) * 0.9, 0, 0, 6.283); c.fill(); }
+  else { c.strokeStyle = '#7a1f1a'; c.lineWidth = 0.7; c.beginPath(); c.moveTo(hx + 1.8, hy + 4.3); c.lineTo(hx + 4.6, hy + 4.3); c.stroke(); }
+  // 前の腕（二関節）。構え→振り下ろし
+  const sx = KX + 3, sy = 104;
+  let tx = KX + 11, ty = 76 + (m === 'play' ? -V.bounce * 1.5 : 0);
+  if (m === 'title') { tx = KX + 11; ty = 98; }
+  if (m === 'ready') { tx = KX + 12; ty = 84; }
+  if (m === 'finish' || m === 'over') {
+    const p = m === 'over' ? 1 : clamp(Game.finT / 0.12, 0, 1);
+    const e = p * p;
+    tx = lerp(KX + 11, TX - TW / 2 + 2, e); ty = lerp(76, TB - CFG.tiles * TP - 3, e);
+  }
+  const arm = twoBone(sx, sy, tx, ty, 22, 22);
+  c.strokeStyle = edge; c.lineWidth = 6.6; c.beginPath(); c.moveTo(sx, sy); c.lineTo(arm.ex, arm.ey); c.lineTo(arm.hx, arm.hy); c.stroke();
+  c.strokeStyle = white; c.lineWidth = 5.4; c.beginPath(); c.moveTo(sx, sy); c.lineTo(arm.ex, arm.ey); c.lineTo(arm.hx, arm.hy); c.stroke();
+  c.fillStyle = skin; c.strokeStyle = '#b98a62'; c.lineWidth = 0.5;
+  c.beginPath(); c.arc(arm.hx, arm.hy, 3.4, 0, 6.283); c.fill(); c.stroke();
+  c.restore();
+}
+
+function drawTiles() {
+  const c = cx, amp = 0.35 + Math.min(Game.count, 70) * 0.012;
+  const kick = V.kick, slam = V.slam;
+  // 台（レンガ2つ）
+  c.fillStyle = '#948a7e'; c.strokeStyle = '#5e564c'; c.lineWidth = 0.5;
+  for (const bx of [TX - TW / 2 - 0.5, TX + TW / 2 - 6.5]) { rr(c, bx, TB, 7, GY - TB, 1); c.fill(); c.stroke(); }
+  for (let i = 0; i < CFG.tiles; i++) {
+    const y = TB - (i + 1) * TP + (TP - TH);
+    const j = Math.sin(nowT * 65 + i * 2.31), j2 = Math.sin(nowT * 83 + i * 1.7);
+    const dx = j * amp * kick * (0.4 + i * 0.05) + j * slam * 1.2;
+    const dy = j2 * amp * kick * 0.25;
+    c.fillStyle = i % 2 ? '#667c92' : '#5b7188';
+    c.strokeStyle = '#33414f'; c.lineWidth = 0.4;
+    rr(c, TX - TW / 2 + dx, y + dy, TW, TH, 1); c.fill(); c.stroke();
+    c.fillStyle = '#ffffff55'; c.fillRect(TX - TW / 2 + 1.5 + dx, y + 0.35 + dy, TW - 3, 0.45);
+  }
+}
+
+function drawSparks() {
+  const c = cx;
+  for (const s of sparks) {
+    const p = s.life / s.max;
+    c.globalAlpha = 1 - p; c.fillStyle = s.col;
+    c.beginPath(); c.arc(s.x, s.y, s.r * (1 - p * 0.5), 0, 6.283); c.fill();
+  }
+  c.globalAlpha = 1;
+}
+
+function render() {
+  const c = cx;
+  c.setTransform(1, 0, 0, 1, 0, 0);
+  c.clearRect(0, 0, cv.width, cv.height);
+  c.setTransform(DPR * U, 0, 0, DPR * U, DPR * OX, DPR * OY);
+  drawBackground();
+  drawAura();
+  drawKarateka();
+  drawTiles();
+  drawSparks();
+  if (V.flash > 0.01) { c.fillStyle = 'rgba(255,255,255,' + Math.min(0.8, V.flash) + ')'; c.fillRect(EX0, EY0, EX1 - EX0, EY1 - EY0); }
+}
+// ===== 効果音（WebAudio で合成。音声ファイルなし・BGMなし。太鼓の連打が音楽の代わり）=====
+const Snd = (() => {
+  let ac = null, master = null, noiseBuf = null;
+  const recent = [];   // 直近に鳴らした太鼓の時刻（重なりすぎの間引きに使う）
+
+  function init() {
+    if (!ac) {
+      try {
+        const AC = window.AudioContext || window.webkitAudioContext;
+        if (!AC) return;
+        ac = new AC();
+        const comp = ac.createDynamicsCompressor();   // 重なっても割れないように
+        comp.threshold.value = -16; comp.ratio.value = 8;
+        master = ac.createGain(); master.gain.value = 0.55;   // 全体の音量の上限
+        master.connect(comp); comp.connect(ac.destination);
+        noiseBuf = ac.createBuffer(1, ac.sampleRate * 2, ac.sampleRate);
+        const d = noiseBuf.getChannelData(0);
+        for (let i = 0; i < d.length; i++) d[i] = Math.random() * 2 - 1;
+      } catch (_) { ac = null; return; }
+    }
+    if (ac.state === 'suspended') ac.resume();
+  }
+  const now = () => ac.currentTime;
+
+  function tone(f, t0, dur, o) {
+    if (!ac) return;
+    o = o || {};
+    const osc = ac.createOscillator(), g = ac.createGain();
+    osc.type = o.type || 'sine';
+    osc.frequency.setValueAtTime(f, t0);
+    if (o.f2) osc.frequency.exponentialRampToValueAtTime(o.f2, t0 + dur);
+    const a = o.attack || 0.004, v = o.gain == null ? 0.3 : o.gain;
+    g.gain.setValueAtTime(0.0001, t0);
+    g.gain.exponentialRampToValueAtTime(v, t0 + a);
+    g.gain.exponentialRampToValueAtTime(0.0001, t0 + dur);
+    osc.connect(g); g.connect(master);
+    osc.start(t0); osc.stop(t0 + dur + 0.05);
+  }
+  function noise(t0, dur, o) {
+    if (!ac) return;
+    const src = ac.createBufferSource(); src.buffer = noiseBuf; src.loop = true;
+    const fl = ac.createBiquadFilter(); fl.type = o.type || 'bandpass';
+    fl.frequency.setValueAtTime(o.f, t0); fl.Q.value = o.q || 1;
+    if (o.f2) fl.frequency.exponentialRampToValueAtTime(o.f2, t0 + dur);
+    const g = ac.createGain();
+    g.gain.setValueAtTime(0.0001, t0);
+    g.gain.linearRampToValueAtTime(Math.max(0.0001, o.gain == null ? 0.3 : o.gain), t0 + 0.004);
+    g.gain.exponentialRampToValueAtTime(0.0001, t0 + dur);
+    src.connect(fl); fl.connect(g); g.connect(master);
+    src.start(t0, Math.random()); src.stop(t0 + dur + 0.05);
+  }
+
+  return {
+    init,
+    // 太鼓：連打が増えるほど高く、強く
+    taiko(count) {
+      if (!ac) return; const t = now();
+      while (recent.length && t - recent[0] > 0.1) recent.shift();
+      if (recent.length >= 4) return;   // 重なりすぎたら間引く
+      recent.push(t);
+      const k = Math.min(count, 70) / 70;
+      const f = 78 + k * 150, v = 0.2 + k * 0.22;
+      tone(f * 1.7, t, 0.13, { gain: v, f2: f });
+      tone(f * 0.5, t, 0.2, { gain: v * 0.6, f2: f * 0.42 });
+      noise(t, 0.04, { f: 1500 + k * 900, q: 0.9, gain: 0.08 + k * 0.08 });
+    },
+    // 10 回ごとのご褒美の音
+    tier(tier) {
+      if (!ac) return; const t = now();
+      const f = 440 * Math.pow(2, Math.min(tier, 7) * 2 / 12);
+      tone(f, t, 0.18, { type: 'triangle', gain: 0.1 });
+      tone(f * 1.5, t + 0.05, 0.18, { type: 'triangle', gain: 0.08 });
+    },
+    // 「はじめ」の気合
+    hajime() {
+      if (!ac) return; const t = now();
+      tone(220, t, 0.22, { type: 'sawtooth', gain: 0.1, f2: 160 });
+      noise(t, 0.16, { f: 900, q: 1.1, gain: 0.12 });
+    },
+    // 「せいっ」：振り下ろして一撃
+    sei() {
+      if (!ac) return; const t = now();
+      tone(330, t, 0.2, { type: 'sawtooth', gain: 0.12, f2: 200 });
+      tone(120, t + 0.08, 0.35, { gain: 0.5, f2: 45 });
+      noise(t + 0.08, 0.25, { f: 2500, f2: 600, q: 0.7, gain: 0.35 });
+    },
+  };
+})();
+// ===== 操作・ループ・結果 =====
+let shownResult = false, last = 0;
+
+function setCall(text) {
+  const el = $('call');
+  el.textContent = text;
+  el.classList.remove('on');
+  void el.offsetWidth;   // アニメーションを最初から
+  el.classList.add('on');
+ 
+}
+
+// 画面どこでもタップ／スペース・Enter。タイトルで開始、結果で再挑戦、連打中は 1 回
+function press() {
+  Snd.init();
+  if (Game.mode === 'title') { Game.begin(); return; }
+  if (Game.mode === 'over') { if (Game.canRetry()) retry(); return; }
+  Game.tap();
+}
+
+function bindUI() {
+  cv.addEventListener('pointerdown', e => { e.preventDefault(); press(); });   // マルチタッチは指ごとに 1 回
+  cv.addEventListener('contextmenu', e => e.preventDefault());
+  window.addEventListener('contextmenu', e => e.preventDefault());
+  window.addEventListener('keydown', e => {
+    if (!acceptKey(e)) { if (e.key === ' ' || e.key === 'Enter') e.preventDefault(); return; }
+    e.preventDefault();
+    press();
+  });
+  // ダブルタップ拡大・ピンチを止める（iOS）
+  for (const ev of ['gesturestart', 'gesturechange', 'gestureend']) document.addEventListener(ev, e => e.preventDefault());
+  let lastTouchEnd = 0;
+  document.addEventListener('touchend', e => { const n = Date.now(); if (n - lastTouchEnd < 350) e.preventDefault(); lastTouchEnd = n; }, { passive: false });
+  document.addEventListener('touchmove', e => e.preventDefault(), { passive: false });
+  window.addEventListener('resize', resize);
+}
+
+function retry() {
+  Game.reset();
+  shownResult = false;
+  resetVisual();
+  $('result').classList.remove('show', 'ready');
+  $('call').classList.remove('on');
+  Game.begin();   // 再挑戦はそのまま「はじめ」から
+}
+
+// 結果（仮）。段階の名前と連打数
+function showResult() {
+  shownResult = true;
+  $('call').classList.remove('on');
+  const names = CFG.stageNames[Game.stage()].split(' ');
+  $('rStage').innerHTML = names.map(n => '<span class="nb">' + n + '</span>').join(' ');
+  $('rCnt').textContent = Game.count;
+  $('result').classList.add('show');
+  $('result').classList.remove('ready');
+}
+
+// ゲームの出来事を、見た目と音の反応にする
+function reactToEvents() {
+  for (const e of Game.events) {
+    if (e.type === 'ready') {
+      $('title').classList.add('hide');
+      setCall('はじめ'); Snd.hajime();
+    } else if (e.type === 'start') {
+      $('call').classList.remove('on');
+    } else if (e.type === 'hit') {
+      Snd.taiko(e.count);
+      if (e.tierUp) Snd.tier(e.tier);
+      onHit(e);
+    } else if (e.type === 'end') {
+      setCall('せいっ'); Snd.sei(); onSlam();
+    }
+  }
+  Game.events.length = 0;
+}
+
+function updateHud() {
+  const m = Game.mode, playing = m === 'play', show = m === 'ready' || playing || m === 'finish';
+  const rem = m === 'ready' ? CFG.duration : Game.remaining();
+  $('tLeft').textContent = rem.toFixed(1);
+  $('hudTop').classList.toggle('on', show);
+  $('hudTop').classList.toggle('low', playing && rem <= 1.5);
+  $('hudBot').classList.toggle('on', show);
+  $('cNum').textContent = Game.count;
+}
+
+function frame(ts) {
+  const dt = last ? Math.min((ts - last) / 1000, 0.1) : 0;
+  last = ts; nowT += dt;
+  Game.step(dt);
+  reactToEvents();
+  if (Game.mode === 'over' && !shownResult) showResult();
+  if (shownResult && Game.canRetry()) $('result').classList.add('ready');
+  updateHud();
+  updateVisual(dt);
+  render();
+  requestAnimationFrame(frame);
+}
+Game.reset();
+resize();
+bindUI();
+requestAnimationFrame(frame);
+</script>
+</body>
+</html>
