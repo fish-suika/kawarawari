@@ -54,7 +54,7 @@ function updateVisual(dt) {
   V.pulse *= Math.exp(-dt * 8);
   V.flash *= Math.exp(-dt * 6);
   V.slam *= Math.exp(-dt * 4);
-  const target = Game.mode === 'title' ? 12 : (Game.mode === 'show' || Game.mode === 'over') ? 0 : 14 + Game.count * 0.55;
+  const target = Game.mode === 'title' ? 12 : (Game.mode === 'show' || Game.mode === 'over') ? 0 : 14 + Math.min(Game.count, CFG.topCount) / CFG.topCount * 38.5;
   V.aura += (target - V.aura) * (1 - Math.exp(-dt * 10));
   for (let i = sparks.length - 1; i >= 0; i--) {
     const s = sparks[i]; s.life += dt;
@@ -144,7 +144,7 @@ function drawGround(v, cp) {
 // 破片・建物・山など（lay：奥から手前）。時刻 tp の姿勢は 30-show.js の poseAt
 const po = { x: 0, y: 0, a: 0, al: 1, s: 1 };
 function drawPieces(sh, lay, tp, jit) {
-  const c = cx, amp = 0.35 + Math.min(Game.count, 70) * 0.012;
+  const c = cx, amp = 0.35 + Math.min(Game.count, CFG.topCount) / CFG.topCount * 0.84;
   for (const p of sh.pieces) {
     if (p.lay !== lay) continue;
     if (p.hid && tp < p.tb) continue;
@@ -184,7 +184,7 @@ function drawAura() {
   const g = c.createRadialGradient(ax, ay, 0, ax, ay, R);
   g.addColorStop(0, col + 'cc'); g.addColorStop(0.5, col + '55'); g.addColorStop(1, col + '00');
   c.fillStyle = g; c.beginPath(); c.arc(ax, ay, R, 0, 6.283); c.fill();
-  if (t >= 1) {   // 10 回ごとに一段派手に：光の筋
+  if (t >= 1) {   // 段階と同じ区切りで一段派手に：光の筋
     const n = 6 + t * 2, rot = nowT * (0.6 + t * 0.25);
     c.fillStyle = col + '40';
     for (let i = 0; i < n; i++) {
@@ -222,7 +222,7 @@ function karaView() {
 
 function drawKarateka() {
   const c = cx, K = karaView();
-  const skin = mix('#f6cfa6', '#ff7a5a', clamp(Game.count / 70, 0, 1));
+  const skin = mix('#f6cfa6', '#ff7a5a', clamp(Game.count / CFG.topCount, 0, 1));
   c.save(); c.translate(K.dx, K.dy + K.by);
   // 影
   c.save(); c.translate(0, -K.by); c.fillStyle = '#0003'; c.beginPath(); c.ellipse(KX + 1, GY + 1.5, 15, 2.6, 0, 0, 6.283); c.fill(); c.restore();

@@ -7,7 +7,7 @@ function stageFor(count) {
   for (let i = 0; i < CFG.levelAt.length; i++) if (count >= CFG.levelAt[i]) s = i + 1;
   return s;
 }
-// 連打数 → オーラの段（10 回ごとに一段）
+// 連打数 → オーラの段（段階と同じ区切りで一段）
 function tierFor(count) { return Math.min(CFG.maxTier, Math.floor(count / CFG.tierEvery)); }
 
 // キー入力を数えてよいか（スペース・Enter、押しっぱなしの連続入力は数えない）

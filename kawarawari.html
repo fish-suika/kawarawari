@@ -102,10 +102,10 @@ const CFG = {
   tiles: 20,             // 積む瓦の枚数
 
   // 段階 i になる最低の連打数（段階 0〜7）。本人のテストプレイで調整
-  levelAt: [10, 20, 30, 40, 50, 60, 70],
+  levelAt: [6, 12, 18, 24, 30, 36, 42],   // 6 回ごと。全力（毎秒 8 回強）でクレーター
   stageNames: ['ひびだけ', '瓦 数枚', '瓦 全部', '道場の床', '道場 全壊', '町内 全壊', '山 真っ二つ', 'クレーター'],
 
-  tierEvery: 10,         // 連打 10 回ごとにオーラが一段派手になる
+  tierEvery: 6,          // 連打 6 回ごとにオーラが一段派手になる（下で levelAt[0] から上書き）
   maxTier: 7,
 
   // ---- Phase 2：破壊の見せ場 ----
@@ -121,6 +121,8 @@ const CFG = {
     ['……いたい', 0.2], ['瓦、数枚', 0.2], ['瓦、全部', 0.3], ['床、抜けた', 0.95],
     ['道場、全壊', 1.65], ['町内、全壊', 2.25], ['山、真っ二つ', 2.75], ['……クレーター', 3.3]],
 };
+CFG.tierEvery = CFG.levelAt[0];                       // オーラの段は段階と同じ区切り（6 回ごと）
+CFG.topCount = CFG.levelAt[CFG.levelAt.length - 1];   // 最高段階の連打数。強さの伸びの上限に使う
 // ===== ゲームのロジック（画面を使わない）=====
 const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
 
@@ -130,7 +132,7 @@ function stageFor(count) {
   for (let i = 0; i < CFG.levelAt.length; i++) if (count >= CFG.levelAt[i]) s = i + 1;
   return s;
 }
-// 連打数 → オーラの段（10 回ごとに一段）
+// 連打数 → オーラの段（段階と同じ区切りで一段）
 function tierFor(count) { return Math.min(CFG.maxTier, Math.floor(count / CFG.tierEvery)); }
 
 // キー入力を数えてよいか（スペース・Enter、押しっぱなしの連続入力は数えない）
@@ -592,7 +594,7 @@ function updateVisual(dt) {
   V.pulse *= Math.exp(-dt * 8);
   V.flash *= Math.exp(-dt * 6);
   V.slam *= Math.exp(-dt * 4);
-  const target = Game.mode === 'title' ? 12 : (Game.mode === 'show' || Game.mode === 'over') ? 0 : 14 + Game.count * 0.55;
+  const target = Game.mode === 'title' ? 12 : (Game.mode === 'show' || Game.mode === 'over') ? 0 : 14 + Math.min(Game.count, CFG.topCount) / CFG.topCount * 38.5;
   V.aura += (target - V.aura) * (1 - Math.exp(-dt * 10));
   for (let i = sparks.length - 1; i >= 0; i--) {
     const s = sparks[i]; s.life += dt;
@@ -682,7 +684,7 @@ function drawGround(v, cp) {
 // 破片・建物・山など（lay：奥から手前）。時刻 tp の姿勢は 30-show.js の poseAt
 const po = { x: 0, y: 0, a: 0, al: 1, s: 1 };
 function drawPieces(sh, lay, tp, jit) {
-  const c = cx, amp = 0.35 + Math.min(Game.count, 70) * 0.012;
+  const c = cx, amp = 0.35 + Math.min(Game.count, CFG.topCount) / CFG.topCount * 0.84;
   for (const p of sh.pieces) {
     if (p.lay !== lay) continue;
     if (p.hid && tp < p.tb) continue;
@@ -722,7 +724,7 @@ function drawAura() {
   const g = c.createRadialGradient(ax, ay, 0, ax, ay, R);
   g.addColorStop(0, col + 'cc'); g.addColorStop(0.5, col + '55'); g.addColorStop(1, col + '00');
   c.fillStyle = g; c.beginPath(); c.arc(ax, ay, R, 0, 6.283); c.fill();
-  if (t >= 1) {   // 10 回ごとに一段派手に：光の筋
+  if (t >= 1) {   // 段階と同じ区切りで一段派手に：光の筋
     const n = 6 + t * 2, rot = nowT * (0.6 + t * 0.25);
     c.fillStyle = col + '40';
     for (let i = 0; i < n; i++) {
@@ -760,7 +762,7 @@ function karaView() {
 
 function drawKarateka() {
   const c = cx, K = karaView();
-  const skin = mix('#f6cfa6', '#ff7a5a', clamp(Game.count / 70, 0, 1));
+  const skin = mix('#f6cfa6', '#ff7a5a', clamp(Game.count / CFG.topCount, 0, 1));
   c.save(); c.translate(K.dx, K.dy + K.by);
   // 影
   c.save(); c.translate(0, -K.by); c.fillStyle = '#0003'; c.beginPath(); c.ellipse(KX + 1, GY + 1.5, 15, 2.6, 0, 0, 6.283); c.fill(); c.restore();
@@ -917,13 +919,13 @@ const Snd = (() => {
       while (recent.length && t - recent[0] > 0.1) recent.shift();
       if (recent.length >= 4) return;   // 重なりすぎたら間引く
       recent.push(t);
-      const k = Math.min(count, 70) / 70;
+      const k = Math.min(count, CFG.topCount) / CFG.topCount;
       const f = 78 + k * 150, v = 0.2 + k * 0.22;
       tone(f * 1.7, t, 0.13, { gain: v, f2: f });
       tone(f * 0.5, t, 0.2, { gain: v * 0.6, f2: f * 0.42 });
       noise(t, 0.04, { f: 1500 + k * 900, q: 0.9, gain: 0.08 + k * 0.08 });
     },
-    // 10 回ごとのご褒美の音
+    // 段階の区切りごとのご褒美の音
     tier(tier) {
       if (!ac) return; const t = now();
       const f = 440 * Math.pow(2, Math.min(tier, 7) * 2 / 12);

@@ -37,11 +37,15 @@
   }
 
   // --- 段階のしきい値 ---
-  const cases = [[0, 0], [9, 0], [10, 1], [19, 1], [20, 2], [29, 2], [30, 3], [39, 3], [40, 4], [49, 4], [50, 5], [59, 5], [60, 6], [69, 6], [70, 7], [71, 7], [200, 7]];
+  // しきい値は CFG.levelAt から導く（0、各しきい値の 1 つ手前とちょうど、最高の少し上と大きな値）
+  const LV = CFG.levelAt, TOP = LV[LV.length - 1];
+  const cases = [[0, 0]];
+  LV.forEach((v, i) => { cases.push([v - 1, i], [v, i + 1]); });
+  cases.push([TOP + 1, 7], [TOP * 3, 7]);
   const bad = cases.filter(([n, s]) => stageFor(n) !== s).map(([n, s]) => n + '→' + stageFor(n) + '(want ' + s + ')');
-  check('連打数ごとの段階（9→0, 10→1, 19→1, 20→2, …, 69→6, 70→7）', bad.length === 0, bad.join(' ') || cases.map(([n]) => n + '→' + stageFor(n)).join(' '));
-  check('段階は 0〜7 の 8 段階（しきい値 7 つ）', CFG.levelAt.length === 7 && CFG.stageNames.length === 8);
-  check('オーラの段は 10 回ごとに 1 つ上がる（9→0, 10→1, 70→7, 100→7）', tierFor(9) === 0 && tierFor(10) === 1 && tierFor(70) === 7 && tierFor(100) === 7);
+  check('連打数ごとの段階（' + (LV[0] - 1) + '→0, ' + LV[0] + '→1, …, ' + (TOP - 1) + '→6, ' + TOP + '→7）', bad.length === 0, bad.join(' ') || cases.map(([n]) => n + '→' + stageFor(n)).join(' '));
+  check('段階は 0〜7 の 8 段階（しきい値 7 つ・昇順）', LV.length === 7 && CFG.stageNames.length === 8 && LV.every((v, i) => i === 0 || v > LV[i - 1]));
+  check('オーラの段は段階と同じ区切り（' + CFG.tierEvery + ' 回ごと）で 1 つ上がる', CFG.tierEvery === LV[0] && LV.every((v, i) => tierFor(v - 1) === i && tierFor(v) === i + 1) && tierFor(TOP * 3) === 7);
 
   // --- 流れ ---
   Game.reset();
@@ -121,13 +125,15 @@
 
   // --- ボットが届く段階 ---
   note('--- 一定の速さのボット（5 秒）---');
-  const want = { 4: 2, 8: 4, 12: 6, 15: 7 };
+  // 毎秒 4→20 回→段階 3、6→30 回→段階 5、8→40 回→段階 6、10→50 回→段階 7
+  const RATES = [4, 6, 8, 10];
+  const want = { 4: stageFor(20), 6: stageFor(30), 8: stageFor(40), 10: stageFor(50) };
   const botRes = {};
-  for (const rate of [4, 8, 12, 15]) {
+  for (const rate of RATES) {
     const b = bot(rate); botRes[rate] = b;
     check('毎秒 ' + rate + ' 回 × 5 秒 → ' + b.count + ' 回 → 段階 ' + b.stage + '（' + CFG.stageNames[b.stage] + '）', b.stage === want[rate], '想定 段階' + want[rate]);
   }
-  note('ボット一覧：' + [4, 8, 12, 15].map(r => '毎秒' + r + '回=' + botRes[r].count + '回/段階' + botRes[r].stage).join('、'));
+  note('ボット一覧：' + RATES.map(r => '毎秒' + r + '回=' + botRes[r].count + '回/段階' + botRes[r].stage).join('、'));
 
   // ===== Phase 2：破壊の見せ場 =====
   note('--- Phase 2：破壊の見せ場 ---');
@@ -141,7 +147,7 @@
     while (Game.mode === 'show' && guard++ < 5000) { Game.step(CFG.h); sh += CFG.h; }
     return { stage, sh, mode: Game.mode };
   }
-  const counts = [0, 10, 20, 30, 40, 50, 60, 70], lens = [];
+  const counts = [0].concat(CFG.levelAt), lens = [];   // 各段階になる最低の連打数
   for (let st = 0; st < 8; st++) {
     const r = runShow(counts[st]); lens.push(r.sh);
     check('段階 ' + st + ' の見せ場は ' + r.sh.toFixed(2) + ' 秒で結果へ（上限 ' + CFG.showMax + ' 秒）', r.stage === st && r.mode === 'over' && r.sh <= CFG.showMax + 0.02 && Math.abs(r.sh - CFG.showSecs[st]) < 0.02, 'stage=' + r.stage + ' mode=' + r.mode);
@@ -151,7 +157,7 @@
   check('段階 0〜1 はすぐ結果へ（1.5 秒以内）、最高段階も約 4 秒以内', lens[0] <= 1.5 && lens[1] <= 1.5 && lens[7] <= 4.02);
 
   // 早送り
-  startPlay(); Game.count = 70; advance(CFG.duration + 0.01);
+  startPlay(); Game.count = TOP; advance(CFG.duration + 0.01);
   while (Game.mode === 'finish') Game.step(CFG.h);
   advance(CFG.skipGrace * 0.5);
   check('見せ場の最初のうち（連打の指が残る間）は早送りにしない', Game.mode === 'show' && Game.skip() === false && Game.mode === 'show');
@@ -160,7 +166,7 @@
   const sk = Game.skip();
   check('早送り入力で直ちに結果へ移る（見せ場の途中から）', sk === true && Game.mode === 'over' && Game.overT === 0 && tBefore < durBefore, 'showT=' + tBefore.toFixed(2));
   advance(CFG.retryWait + 0.01);
-  check('早送りのあと 0.5 秒で再挑戦でき、連打数・段階は変わらない', Game.canRetry() && Game.count === 70 && Game.stage() === 7);
+  check('早送りのあと 0.5 秒で再挑戦でき、連打数・段階は変わらない', Game.canRetry() && Game.count === TOP && Game.stage() === 7);
   check('見せ場でない間の早送りは何もしない', Game.skip() === false);
 
   // 破片の数・再現性
@@ -215,7 +221,8 @@
   for (let i = 0; i < 20; i++) { Game.tap(); advance(0.05); }
   const ev = Game.events.filter(e => e.type === 'hit');
   check('数えた連打ごとに必ず反応のイベントが出る', ev.length === 20 && Game.count === 20, 'events=' + ev.length);
-  check('10 回ごとに「一段派手」のイベントが出る', ev.filter(e => e.tierUp).map(e => e.count).join(',') === '10,20');
+  const tierUps = [CFG.tierEvery, CFG.tierEvery * 2, CFG.tierEvery * 3].filter(n => n <= 20);
+  check(CFG.tierEvery + ' 回ごとに「一段派手」のイベントが出る', ev.filter(e => e.tierUp).map(e => e.count).join(',') === tierUps.join(','));
 
   const s = document.createElement('h2');
   s.textContent = fail === 0 ? '全部 OK（' + (total - fail) + '/' + total + '）' : 'NG が ' + fail + ' 件（OK ' + (total - fail) + '/' + total + '）';

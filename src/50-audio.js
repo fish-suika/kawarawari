@@ -59,13 +59,13 @@ const Snd = (() => {
       while (recent.length && t - recent[0] > 0.1) recent.shift();
       if (recent.length >= 4) return;   // 重なりすぎたら間引く
       recent.push(t);
-      const k = Math.min(count, 70) / 70;
+      const k = Math.min(count, CFG.topCount) / CFG.topCount;
       const f = 78 + k * 150, v = 0.2 + k * 0.22;
       tone(f * 1.7, t, 0.13, { gain: v, f2: f });
       tone(f * 0.5, t, 0.2, { gain: v * 0.6, f2: f * 0.42 });
       noise(t, 0.04, { f: 1500 + k * 900, q: 0.9, gain: 0.08 + k * 0.08 });
     },
-    // 10 回ごとのご褒美の音
+    // 段階の区切りごとのご褒美の音
     tier(tier) {
       if (!ac) return; const t = now();
       const f = 440 * Math.pow(2, Math.min(tier, 7) * 2 / 12);
