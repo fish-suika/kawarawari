@@ -1,5 +1,5 @@
 // ===== 操作・ループ・結果 =====
-let shownResult = false, last = 0;
+let shownResult = false, last = 0, cueI = 0, capKey = '';
 
 function setCall(text) {
   const el = $('call');
@@ -14,9 +14,19 @@ function setCall(text) {
 function press() {
   Snd.init();
   if (Game.mode === 'title') { Game.begin(); return; }
+  if (Game.mode === 'show') { Game.skip(); return; }   // 見せ場はタップで早送り
   if (Game.mode === 'over') { if (Game.canRetry()) retry(); return; }
   Game.tap();
 }
+
+// 段階ごとの大きな文字（言葉の途中では改行しない：「、」の後ろで区切る）
+function setCap(text) {
+  const el = $('cap'), parts = text.split(/(?<=、)/);
+  el.innerHTML = parts.map(p => '<span class="nb">' + p + '</span>').join('');
+  el.style.fontSize = Math.min(17, 86 / text.length) + 'cqw';
+  el.classList.remove('on'); void el.offsetWidth; el.classList.add('on');
+}
+function hideCap() { $('cap').classList.remove('on'); }
 
 function bindUI() {
   cv.addEventListener('pointerdown', e => { e.preventDefault(); press(); });   // マルチタッチは指ごとに 1 回
@@ -40,7 +50,7 @@ function retry() {
   shownResult = false;
   resetVisual();
   $('result').classList.remove('show', 'ready');
-  $('call').classList.remove('on');
+  $('call').classList.remove('on'); hideCap(); capKey = '';
   Game.begin();   // 再挑戦はそのまま「はじめ」から
 }
 
@@ -68,10 +78,24 @@ function reactToEvents() {
       if (e.tierUp) Snd.tier(e.tier);
       onHit(e);
     } else if (e.type === 'end') {
-      setCall('せいっ'); Snd.sei(); onSlam();
+      setCall('せいっ'); Snd.sei();
+    } else if (e.type === 'show') {      // 瓦に届いた：見せ場の始まり
+      $('call').classList.remove('on'); cueI = 0; capKey = '';
+      Snd.showBegin(); onSlam();
+    } else if (e.type === 'over') {
+      Snd.showEnd(!!e.skipped); hideCap();
     }
   }
   Game.events.length = 0;
+}
+
+// 見せ場の音の合図と大きな文字
+function playShow() {
+  const sh = Game.show;
+  if (Game.mode !== 'show' || !sh) return;
+  while (cueI < sh.cues.length && sh.cues[cueI].t <= Game.showT) Snd.cue(sh.cues[cueI++].s);
+  const i = captionAt(sh, Game.showT), key = i < 0 ? '' : sh.caps[i].text;
+  if (key !== capKey) { capKey = key; if (key) setCap(key); }
 }
 
 function updateHud() {
@@ -89,6 +113,7 @@ function frame(ts) {
   last = ts; nowT += dt;
   Game.step(dt);
   reactToEvents();
+  playShow();
   if (Game.mode === 'over' && !shownResult) showResult();
   if (shownResult && Game.canRetry()) $('result').classList.add('ready');
   updateHud();

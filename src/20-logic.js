@@ -17,14 +17,14 @@ function acceptKey(e) {
 }
 
 const Game = {
-  mode: 'title',   // title → ready → play → finish → over
-  t: 0, readyT: 0, finT: 0, overT: 0,
+  mode: 'title',   // title → ready → play → finish（せいっ）→ show（破壊の見せ場）→ over（結果）
+  t: 0, readyT: 0, finT: 0, showT: 0, overT: 0, show: null,
   count: 0, hits: [],      // hits: 数えた時刻（直近1秒の窓の判定に使う）
   events: [],
 
   reset() {
     this.mode = 'title';
-    this.t = 0; this.readyT = 0; this.finT = 0; this.overT = 0;
+    this.t = 0; this.readyT = 0; this.finT = 0; this.showT = 0; this.overT = 0; this.show = null;
     this.count = 0; this.hits = [];
     this.events = [];
   },
@@ -38,6 +38,20 @@ const Game = {
   stage() { return stageFor(this.count); },
   tier() { return tierFor(this.count); },
   remaining() { return Math.max(0, CFG.duration - this.t); },
+  // 見せ場を始める（届いた段階まで。壊れ方は連打数で決まるシード付き）
+  startShow() {
+    const st = this.stage();
+    this.show = buildShow(st, CFG.seed + this.count);
+    this.mode = 'show'; this.showT = 0;
+    this.events.push({ type: 'show', stage: st });
+  },
+  // タップで早送り：見せ場の最初の skipGrace 秒は受け付けない。結果へ直ちに移る
+  skip() {
+    if (this.mode !== 'show' || this.showT < CFG.skipGrace) return false;
+    this.showT = this.show.dur; this.mode = 'over'; this.overT = 0;
+    this.events.push({ type: 'over', skipped: true });
+    return true;
+  },
   canRetry() { return this.mode === 'over' && this.overT >= CFG.retryWait; },
 
   // 連打 1 回。'hit' 数えた / 'limited' 速すぎて数えない / 'ignored' 受付外（はじめ前・締め切り後）
@@ -69,7 +83,12 @@ const Game = {
     }
     if (this.mode === 'finish') {
       this.finT += dt;
-      if (this.finT >= CFG.finishSecs) { this.mode = 'over'; this.overT = 0; this.events.push({ type: 'over' }); }
+      if (this.finT >= CFG.finishSecs) this.startShow();
+      return;
+    }
+    if (this.mode === 'show') {
+      this.showT += dt;
+      if (this.showT >= this.show.dur - 1e-9) { this.showT = this.show.dur; this.mode = 'over'; this.overT = 0; this.events.push({ type: 'over' }); }
       return;
     }
     if (this.mode === 'over') this.overT += dt;

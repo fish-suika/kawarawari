@@ -62,12 +62,14 @@
   advance(1.9);
   check('締め切り直前のタップは数える', Game.mode === 'play' && Game.tap() === 'hit' && Game.count === 2, 'count=' + Game.count);
   advance(0.2);
-  check('5 秒たつと連打が終わる（せいっ）', Game.mode === 'finish' || Game.mode === 'over', Game.mode);
+  check('5 秒たつと連打が終わる（せいっ）', Game.mode === 'finish' || Game.mode === 'show' || Game.mode === 'over', Game.mode);
   const c0 = Game.count;
   const r = Game.tap();
   check('締め切り後の入力は数えない', r === 'ignored' && Game.count === c0, 'count=' + Game.count);
-  advance(CFG.finishSecs + 0.1);
-  check('「せいっ」のあと結果へ', Game.mode === 'over');
+  advance(CFG.finishSecs + 0.05);
+  check('「せいっ」のあと破壊の見せ場へ', Game.mode === 'show' || Game.mode === 'over', Game.mode);
+  advance(CFG.showSecs[Game.stage()] + 0.1);
+  check('見せ場のあと結果へ', Game.mode === 'over');
   Game.tap();
   check('結果画面でも数えない', Game.count === c0);
 
@@ -80,7 +82,7 @@
   check('4.99 秒は数え、5.01 秒は数えない', near === 'hit' && after === 'ignored' && Game.count === 1);
 
   // --- 結果直後の誤タップ防止 ---
-  startPlay(); advance(CFG.duration + CFG.finishSecs + 0.05);
+  startPlay(); advance(CFG.duration + CFG.finishSecs + CFG.showSecs[0] + 0.05);
   check('結果の直後は再挑戦を受け付けない', Game.mode === 'over' && !Game.canRetry());
   advance(CFG.retryWait);
   check('約 0.5 秒たつと再挑戦できる', Game.canRetry());
@@ -126,6 +128,87 @@
     check('毎秒 ' + rate + ' 回 × 5 秒 → ' + b.count + ' 回 → 段階 ' + b.stage + '（' + CFG.stageNames[b.stage] + '）', b.stage === want[rate], '想定 段階' + want[rate]);
   }
   note('ボット一覧：' + [4, 8, 12, 15].map(r => '毎秒' + r + '回=' + botRes[r].count + '回/段階' + botRes[r].stage).join('、'));
+
+  // ===== Phase 2：破壊の見せ場 =====
+  note('--- Phase 2：破壊の見せ場 ---');
+  // 連打数 n で締め切りまで進め、「せいっ」→見せ場→結果の長さを測る
+  function runShow(n) {
+    startPlay(); Game.count = n;
+    advance(CFG.duration + 0.01);
+    let sh = 0, guard = 0;
+    while (Game.mode === 'finish' && guard++ < 5000) Game.step(CFG.h);
+    const stage = Game.stage(); guard = 0;
+    while (Game.mode === 'show' && guard++ < 5000) { Game.step(CFG.h); sh += CFG.h; }
+    return { stage, sh, mode: Game.mode };
+  }
+  const counts = [0, 10, 20, 30, 40, 50, 60, 70], lens = [];
+  for (let st = 0; st < 8; st++) {
+    const r = runShow(counts[st]); lens.push(r.sh);
+    check('段階 ' + st + ' の見せ場は ' + r.sh.toFixed(2) + ' 秒で結果へ（上限 ' + CFG.showMax + ' 秒）', r.stage === st && r.mode === 'over' && r.sh <= CFG.showMax + 0.02 && Math.abs(r.sh - CFG.showSecs[st]) < 0.02, 'stage=' + r.stage + ' mode=' + r.mode);
+  }
+  let mono = true; for (let i = 1; i < 8; i++) if (!(lens[i] > lens[i - 1])) mono = false;
+  check('見せ場は段階が高いほど長い（単調増加）', mono, lens.map(v => v.toFixed(2)).join(' < '));
+  check('段階 0〜1 はすぐ結果へ（1.5 秒以内）、最高段階も約 4 秒以内', lens[0] <= 1.5 && lens[1] <= 1.5 && lens[7] <= 4.02);
+
+  // 早送り
+  startPlay(); Game.count = 70; advance(CFG.duration + 0.01);
+  while (Game.mode === 'finish') Game.step(CFG.h);
+  advance(CFG.skipGrace * 0.5);
+  check('見せ場の最初のうち（連打の指が残る間）は早送りにしない', Game.mode === 'show' && Game.skip() === false && Game.mode === 'show');
+  advance(CFG.skipGrace);
+  const tBefore = Game.showT, durBefore = Game.show.dur;
+  const sk = Game.skip();
+  check('早送り入力で直ちに結果へ移る（見せ場の途中から）', sk === true && Game.mode === 'over' && Game.overT === 0 && tBefore < durBefore, 'showT=' + tBefore.toFixed(2));
+  advance(CFG.retryWait + 0.01);
+  check('早送りのあと 0.5 秒で再挑戦でき、連打数・段階は変わらない', Game.canRetry() && Game.count === 70 && Game.stage() === 7);
+  check('見せ場でない間の早送りは何もしない', Game.skip() === false);
+
+  // 破片の数・再現性
+  let maxPieces = 0, maxBroken = 0;
+  for (let st = 0; st < 8; st++) {
+    const s = buildShow(st, CFG.seed + counts[st]);
+    maxPieces = Math.max(maxPieces, s.pieces.length);
+    maxBroken = Math.max(maxBroken, s.pieces.filter(p => isFinite(p.tb)).length);
+  }
+  check('破片の数が上限（' + CFG.maxPieces + '）を超えない（全段階）', maxPieces <= CFG.maxPieces, '最大 ' + maxPieces + '（うち飛ぶもの ' + maxBroken + '）');
+  const sig = s => JSON.stringify(s.pieces.map(p => [p.x, p.y, p.vx, p.vy, p.w, p.tb, p.fy]));
+  check('同じシードなら同じ壊れ方（再現できる）', sig(buildShow(7, 12345)) === sig(buildShow(7, 12345)));
+  check('シードが違えば飛び方が変わる', sig(buildShow(7, 12345)) !== sig(buildShow(7, 54321)));
+  let badN = 0;
+  for (let st = 0; st < 8; st++) {
+    const s = buildShow(st, 99);
+    for (const t of [0, 0.5, 1, 2, 3, 4, 6]) for (const p of s.pieces) { const o = poseAt(p, t, { x: 0, y: 0, a: 0, al: 1, s: 1 }); if (![o.x, o.y, o.a, o.al, o.s].every(Number.isFinite)) badN++; }
+  }
+  check('どの時刻でも破片の位置が正常な数値（早送り・結果のあとも）', badN === 0, 'bad=' + badN);
+
+  // 段階ごとに壊れる範囲がはっきり違う
+  const groups = st => { const s = buildShow(st, 7), g = {}; for (const p of s.pieces) if (isFinite(p.tb) && p.g !== 'puff') g[p.g] = (g[p.g] || 0) + 1; return g; };
+  const G = [0, 1, 2, 3, 4, 5, 6, 7].map(groups), keys = g => Object.keys(g).sort().join(','), sum = g => Object.values(g).reduce((a, b) => a + b, 0);
+  check('段階 0：何も割れない（ひびだけ）', Object.keys(G[0]).length === 0);
+  check('段階 1：瓦が数枚だけ（5 枚 = 15 片）、段階 2：瓦が全部（20 枚 = 60 片）', G[1].tile === 15 && keys(G[1]) === 'tile' && G[2].tile === 60 && keys(G[2]) === 'tile', keys(G[1]) + ' / ' + keys(G[2]));
+  check('段階 3：台と床が加わる', G[3].stand === 2 && G[3].slab > 0 && !G[3].dojo, keys(G[3]));
+  check('段階 4：道場の建物が加わる', G[4].dojo > 20 && !G[4].house, keys(G[4]));
+  check('段階 5：家と電柱が加わる（家 6 軒・電柱 4 本）', G[5].house === 12 && G[5].pole === 4 && !G[5].mountain, keys(G[5]));
+  check('段階 6：裏山が割れる', G[6].mountain === 2 && G[6].rock > 0 && !G[6].dirt, keys(G[6]));
+  check('段階 7：地面（クレーター）が加わる', G[7].dirt > 50, keys(G[7]));
+  check('壊れる破片の数が段階ごとに増える', [1, 2, 3, 4, 5, 6, 7].every(i => sum(G[i]) > sum(G[i - 1])), G.map(sum).join(' < '));
+  const area = i => CAMS[i].w * CAMS[i].h;
+  check('カメラが段階ごとに一段引く（範囲が必ず広がる）', [3, 4, 5, 6, 7].every(i => area(i) > area(i - 1)));
+  const cams = [0, 1, 2, 3, 4, 5, 6, 7].map(st => camAt(st, CFG.showSecs[st]));
+  check('見せ場の終わりのカメラが段階の設定どおり', cams.every((c, i) => Math.abs(c.w - CAMS[i].w) < 0.01 && Math.abs(c.cy - CAMS[i].cy) < 0.01));
+  const midc = camAt(7, CFG.camAt[7] + CFG.camDur[7] / 2);
+  check('カメラは連続して動く（引いている途中は前後の中間）', midc.w > CAMS[6].w && midc.w < CAMS[7].w);
+
+  // 画面の縦横比ごとに、引いたカメラが必要な範囲を覆う（はみ出さない）
+  const asp = [[390, 844], [375, 667], [360, 800], [768, 1024], [844, 390], [1024, 768], [1280, 720], [1920, 1080], [2560, 1080], [600, 1200]];
+  const off = [];
+  for (const [w, h] of asp) for (let st = 0; st < 8; st++) {
+    const v = viewFor(CAMS[st], w, h), e = EXTENT[st];
+    if (!(v.x0 <= e.x0 && v.x1 >= e.x1 && v.y0 <= e.y0 && v.y1 >= e.y1)) off.push(w + 'x' + h + ' 段階' + st);
+  }
+  check('縦・横・PC の 10 種類の画面で、どの段階も必要な範囲が画面に入る', off.length === 0, off.join(', ') || asp.length + ' 種類 × 8 段階');
+  check('クレーター：足場の柱は残り、まわりは深く掘れる', craterTop(PX, 1) === BY && craterTop(CR.x + 100, 1) > BY + 100 && craterTop(CR.x + CR.R + 20, 1) === GY && craterTop(CR.x + 100, 0) === GY);
+  check('大きな文字は段階ごとに用意（段階 7 は 6 つ：瓦、全部〜クレーター）', buildShow(7, 1).caps.length === 6 && buildShow(0, 1).caps.length === 1 && buildShow(1, 1).caps.length === 1);
 
   // --- 連打の反応（イベント）---
   startPlay();
