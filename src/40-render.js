@@ -79,7 +79,7 @@ const CLOUDS = [[-200, -110, 1], [110, -95, 1.3], [300, -150, 0.9], [-60, -190, 
 function drawSky(v, sp) {
   const c = cx, a1 = sp.a1, a2 = sp.a2, disc = sp.eps > 0.05;
   const g = c.createLinearGradient(0, v.y0, 0, GY);
-  g.addColorStop(0, a1 > 0 ? mix('#7cc8f2', '#050822', a1) : '#7cc8f2'); g.addColorStop(1, a2 > 0 ? mix('#f2fbff', '#0b1240', a2) : '#f2fbff');
+  g.addColorStop(0, a1 > 0 ? mix('#7cc8f2', '#070b24', a1) : '#7cc8f2'); g.addColorStop(1, a2 > 0 ? mix('#f2fbff', '#070b24', a2) : '#f2fbff');   // 宇宙の色は地面の下と同じ色に行き着く（継ぎ目の線が出ない）
   c.fillStyle = g; c.fillRect(v.x0 - 5, v.y0 - 5, v.x1 - v.x0 + 10, GY - v.y0 + 6);
   c.fillStyle = disc ? '#070b24' : '#3a2a22'; c.fillRect(v.x0 - 5, GY - 1, v.x1 - v.x0 + 10, v.y1 - GY + 6);   // 地面の下：平らなうちは地面が覆う（穴の奥は drawCavity）／引いたら宇宙
   if (disc) { drawStars(v, sp); drawAtmo(v, sp); }
@@ -108,30 +108,34 @@ function drawSky(v, sp) {
 }
 
 // 地面の上端を決める点の x（地面の断面の輪郭）。引いたとき（disc）は地球の丸みを足すので細かく刻む
-function groundXs(v, cp, pw, disc) {
+function groundXs(v, cp, disc) {
   const xL = v.x0 - 30, xR = v.x1 + 30, xs = [xL, xR];
   if (disc) { const st = Math.max(6, (xR - xL) / 240); for (let x = xL; x < xR; x += st) xs.push(x); }
   if (cp > 0) {
     for (let x = CR.x - CR.R - 6; x <= CR.x + CR.R + 6; x += 6) xs.push(x);
-    for (const e of [PX - pw / 2, PX + pw / 2]) xs.push(e - 0.001, e + 0.001);
+    for (const e of [CR.x - CFL, CR.x + CFL]) xs.push(e - 0.001, e + 0.001);   // 穴の底の平らな部分の端
   }
   return xs.filter(x => x >= xL && x <= xR).sort((a, b) => a - b);
 }
-// 丸み：地面の頂点 (PX, GY) から横に離れるほど下がる量。Re：そのときの地球の半径（0 なら平ら）
-const sagOf = Re => (!Re ? () => 0 : x => { const d = x - PX; return Math.abs(d) < Re * 0.9995 ? Re - Math.sqrt(Re * Re - d * d) : Re; });
+// 丸み：クレーターの中心 (PX, GY) の高さを基準に、地球の円（中心 x=EX）に沿って地面が下がる量。Re：そのときの地球の半径（0 なら平ら）
+const sagOf = Re => {
+  if (!Re) return () => 0;
+  const cy = cyOf(Re);
+  return x => { const d = x - EX; return cy - GY - (Math.abs(d) < Re * 0.9995 ? Math.sqrt(Re * Re - d * d) : 0); };
+};
 // 地層の下の深いところ（半径に対する割合・色）：地球の断面。引いたときだけ見える
 const DEEP = [[0.72, '#9c5a3c'], [0.55, '#d06a38'], [0.34, '#ff9a3a'], [0.17, '#ffe27a']];
 
 // クレーターの穴の中（奥の壁）：縁は明るく、奥ほど暗い。地層の線がうっすら見える。穴のふちの内側は影で、えぐれて見える
 function drawCavity(v, cp, sp) {
   if (cp <= 0) return;
-  const c = cx, disc = sp.eps > 0.05, Re = disc ? PR / sp.eps : 0, sag = sagOf(Re), pw = pillarW(v.k, sp.eps);
-  const xs = groundXs(v, cp, pw, false).filter(x => x >= CR.x - CR.R - 7 && x <= CR.x + CR.R + 7);
+  const c = cx, disc = sp.eps > 0.05, Re = disc ? PR / sp.eps : 0, sag = sagOf(Re);
+  const xs = groundXs(v, cp, false).filter(x => x >= CR.x - CR.R - 7 && x <= CR.x + CR.R + 7);
   if (xs.length < 2) return;
   const xa = xs[0], xb = xs[xs.length - 1];
   c.save(); c.beginPath();
   xs.forEach((x, i) => (i ? c.lineTo(x, GY + sag(x)) : c.moveTo(x, GY + sag(x))));
-  for (let i = xs.length - 1; i >= 0; i--) c.lineTo(xs[i], craterTop(xs[i], cp, pw) + sag(xs[i]));
+  for (let i = xs.length - 1; i >= 0; i--) c.lineTo(xs[i], craterTop(xs[i], cp) + sag(xs[i]));
   c.closePath(); c.clip();
   const g = c.createLinearGradient(0, GY, 0, GY + CR.D + 30);
   g.addColorStop(0, '#d4b283'); g.addColorStop(0.22, '#aa8460'); g.addColorStop(0.5, '#6c4d38'); g.addColorStop(0.8, '#3d2b24'); g.addColorStop(1, '#271b1c');
@@ -143,16 +147,16 @@ function drawCavity(v, cp, sp) {
     c.strokeStyle = 'rgba(255,230,190,0.10)'; c.beginPath(); c.moveTo(xa, y + 1.6 / v.k); c.lineTo(xb, y + 1.6 / v.k); c.stroke();
   }
   c.beginPath();                                      // 穴の縁（掘れた地面との境）に落ちる影
-  for (let i = xs.length - 1; i >= 0; i--) { const x = xs[i], y = craterTop(x, cp, pw) + sag(x); if (i === xs.length - 1) c.moveTo(x, y); else c.lineTo(x, y); }
-  c.lineJoin = 'round'; c.strokeStyle = 'rgba(18,8,6,0.40)'; c.lineWidth = Math.min(30 / v.k, pw * 0.7); c.stroke();
+  for (let i = xs.length - 1; i >= 0; i--) { const x = xs[i], y = craterTop(x, cp) + sag(x); if (i === xs.length - 1) c.moveTo(x, y); else c.lineTo(x, y); }
+  c.lineJoin = 'round'; c.strokeStyle = 'rgba(18,8,6,0.40)'; c.lineWidth = Math.min(30 / v.k, 30); c.stroke();
   c.restore();
 }
 
-// 地面の断面：地層の帯、道場の下の階、クレーター（足場の柱だけ残る）。引いたとき（sp.eps > 0.05）は地球の丸みと断面（円の層）になる
+// 地面の断面：地層の帯、道場の下の階、クレーター（本人は穴の底に立つ）。引いたとき（sp.eps > 0.05）は地球の丸みと断面（円の層）になる
 function drawGround(v, cp, sp) {
-  const c = cx, disc = sp.eps > 0.05, Re = disc ? PR / sp.eps : 0, ccy = GY + Re, sag = sagOf(Re), pw = pillarW(v.k, sp.eps);
+  const c = cx, disc = sp.eps > 0.05, Re = disc ? PR / sp.eps : 0, ccy = disc ? cyOf(Re) : 0, sag = sagOf(Re);
   const xL = v.x0 - 30, xR = v.x1 + 30, yB = v.y1 + 40;
-  const pts = groundXs(v, cp, pw, disc).map(x => [x, craterTop(x, cp, pw) + sag(x)]);
+  const pts = groundXs(v, cp, disc).map(x => [x, craterTop(x, cp) + sag(x)]);
   c.save(); c.beginPath();
   pts.forEach((p, i) => (i ? c.lineTo(p[0], p[1]) : c.moveTo(p[0], p[1])));
   c.lineTo(xR, yB); c.lineTo(xL, yB); c.closePath(); c.clip();
@@ -162,7 +166,7 @@ function drawGround(v, cp, sp) {
       c.fillStyle = STRATA[i][1]; c.fillRect(xL, y0, xR - xL, Math.max(y1, y0 + 1) - y0 + 0.5);
     }
   } else {
-    const dk = (r, col) => { c.fillStyle = col; c.beginPath(); c.arc(PX, ccy, r, 0, 6.283); c.fill(); };
+    const dk = (r, col) => { c.fillStyle = col; c.beginPath(); c.arc(EX, ccy, r, 0, 6.283); c.fill(); };
     for (const [y, col] of STRATA) dk(Re - (y - GY), col);
     for (const [f, col] of DEEP) dk(Re * f, col);
   }
@@ -175,12 +179,12 @@ function drawGround(v, cp, sp) {
   c.fillRect(DL, 176, DR - DL, 1.6);
   c.fillStyle = '#e0b068'; c.fillRect(DL, BY, DR - DL, 9);
   c.fillStyle = '#9a7438'; c.fillRect(DL, BY, DR - DL, 1.2);
-  if (cp > 0) {   // 穴のふち（えぐれた土・足場の柱の側面）の影と輪郭線。地面の内側だけに見える
+  if (cp > 0) {   // 穴のふち（えぐれた土）の影と輪郭線。地面の内側だけに見える
     const cr = pts.filter(p => p[0] >= CR.x - CR.R - 7 && p[0] <= CR.x + CR.R + 7);
     c.beginPath(); cr.forEach((p, i) => (i ? c.lineTo(p[0], p[1]) : c.moveTo(p[0], p[1])));
     c.lineJoin = 'round';
-    c.strokeStyle = 'rgba(48,26,14,0.26)'; c.lineWidth = Math.min(16 / v.k, pw * 0.55); c.stroke();
-    c.strokeStyle = 'rgba(48,26,14,0.32)'; c.lineWidth = Math.min(7 / v.k, pw * 0.3); c.stroke();
+    c.strokeStyle = 'rgba(48,26,14,0.26)'; c.lineWidth = Math.min(16 / v.k, 24); c.stroke();
+    c.strokeStyle = 'rgba(48,26,14,0.32)'; c.lineWidth = Math.min(7 / v.k, 13); c.stroke();
     c.strokeStyle = '#45291a'; c.lineWidth = 3.2 / v.k; c.stroke();
   }
   c.restore();
@@ -272,8 +276,7 @@ function drawKarateka() {
   const c = cx, K = karaView();
   const skin = mix('#f6cfa6', '#ff7a5a', clamp(Game.count / CFG.topCount, 0, 1));
   const kz = CAMV.k, hs0 = haloStrength();
-  let sc = hs0 > 0 ? 1 + 0.28 * clamp((1.1 - kz) / 0.6, 0, 1) : 1;   // 引いたとき少し大きく
-  if (hs0 > 0 && Game.show && Game.show.stage >= 8) sc = Math.max(sc, Math.min(14, 24 / (31 * kz)));   // 宇宙まで引いたら、見つけられる大きさ（画面で約 24px）まで大きく
+  const sc = hs0 > 0 && Game.show ? heroScale(Game.show.stage, kz) : 1;   // 引いたとき大きく（宇宙まで引いたら、見つけられる大きさ・穴の底に収まる大きさまで）
   const ow = Math.min(2.2, Math.max(0.7, 1.1 / kz));                                          // 縁取りの太さ（引いても見える）
   c.save(); c.translate(K.dx, K.dy + K.by);
   if (sc > 1) { c.translate(KX + 1, GY); c.scale(sc, sc); c.translate(-(KX + 1), -GY); }
@@ -348,9 +351,9 @@ function drawSparks() {
 // 世界のひとまとまり（奥の壁・山・家・地面・人・瓦…）。core：本人（オーラ・光の輪）を地面の手前に描く
 function drawScene(v, sh, sp, inShow, ts, tp, jit, core) {
   const c = cx, wa = sp.world, cp = craterAt(sh.stage, ts);
+  drawCavity(v, cp, sp);              // 穴の奥の壁（世界が見えなくなっても、穴は地面の一部として残る）
   c.save(); if (wa < 1) c.globalAlpha = wa;
   if (wa > 0.01) {
-    drawCavity(v, cp, sp);
     drawHills(v, tp);
     drawPieces(sh, 0, tp, jit);       // 裏山
     drawResidents(v);
@@ -360,7 +363,7 @@ function drawScene(v, sh, sp, inShow, ts, tp, jit, core) {
   }
   c.restore();
   drawGround(v, cp, sp);
-  if (sp.glb > 0.01) drawGlobe(v, sp);
+  if (sp.glb > 0.01) { drawGlobe(v, sp); drawCavity(v, cp, sp); }   // 地球の外見に切り替わっても、本人の立つ穴は見える
   if (sp.ecr > 0.001) drawEarthCracks(v, sp);
   c.save(); if (wa < 1) c.globalAlpha = wa;
   if (wa > 0.01) drawCast(v, sh, inShow, ts);
@@ -400,18 +403,19 @@ function render() {
   if (sp.eps > 0.05) { drawSpaceBuddies(v, sp); drawMagma(v, sp); }
   const split = sp.eps > 0.05 && (sp.ang > 0.0005 || sp.sp > 0.0005);
   if (!split) drawScene(v, sh, sp, inShow, ts, tp, jit, true);
-  else {                                  // 大陸（地球）が左右の半分に割れて動く。真ん中の足場の柱だけは動かない
-    const hw = pillarW(v.k, sp.eps) / 2;
-    for (const side of [-1, 0, 1]) {
-      c.save();
-      if (side) { const h = halfXf(sp, side); c.translate(h.dx, 0); c.translate(PX, PCY); c.rotate(h.rot); c.translate(-PX, -PCY); }
+  else {                                  // 大陸（地球）が x=EX で左右の半分に割れて動く。本人はクレーターの底に立ったまま、左の半分といっしょに動く
+    const ov = 1.2 / v.k, half = side => { const h = halfXf(sp, side); c.translate(h.dx, 0); c.translate(EX, PCY); c.rotate(h.rot); c.translate(-EX, -PCY); };
+    for (const side of [-1, 1]) {
+      c.save(); half(side);
       c.beginPath();
-      if (side < 0) c.rect(PX - hw - 4e5, PCY - 4e5, 4e5, 8e5); else if (side > 0) c.rect(PX + hw, PCY - 4e5, 4e5, 8e5); else c.rect(PX - hw, PCY - 4e5, 2 * hw, 8e5);
+      if (side < 0) c.rect(EX - 4e5, PCY - 4e5, 4e5 + ov, 8e5); else c.rect(EX, PCY - 4e5, 4e5, 8e5);   // 左は継ぎ目が見えないよう少し重ねる
       c.clip();
       drawScene(v, sh, sp, inShow, ts, tp, jit, false);
       c.restore();
     }
+    c.save(); half(-1);
     drawAura(); drawHalo(karaView()); drawKarateka();
+    c.restore();
   }
   if (sp.crack > 0) drawRiftCrack(v, sp);
   drawSparks();

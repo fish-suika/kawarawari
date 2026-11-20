@@ -215,7 +215,10 @@
     if (!(v.x0 <= e.x0 && v.x1 >= e.x1 && v.y0 <= e.y0 && v.y1 >= e.y1)) off.push(w + 'x' + h + ' 段階' + st);
   }
   check('縦・横・PC の ' + asp.length + ' 種類の画面で、どの段階も必要な範囲が画面に入る（段階 8 は地平線と割れ目、段階 9〜10 は地球と月・星）', off.length === 0, off.join(', ') || asp.length + ' 種類 × ' + NS + ' 段階');
-  check('クレーター：足場の柱は残り、まわりは深く掘れる', craterTop(PX, 1) === BY && craterTop(CR.x + 100, 1) > BY + 100 && craterTop(CR.x + CR.R + 20, 1) === GY && craterTop(CR.x + 100, 0) === GY);
+  check('クレーター：足場の柱はなく、本人の立つ中心は穴のいちばん深い平らな底（深さ ' + CR.D + '）。まわりは外へ浅くなり、穴の外は元の地面、掘る前は平ら',
+    craterTop(PX, 1) === FLOOR_Y && FLOOR_Y === GY + CR.D && [-CFL, -30, 0, 30, CFL].every(d => craterTop(PX + d, 1) === FLOOR_Y) && craterTop(KX - 14, 1) === FLOOR_Y && craterTop(KX + 14, 1) === FLOOR_Y &&
+    craterTop(CR.x + 150, 1) < FLOOR_Y && craterTop(CR.x + 150, 1) > GY + 20 && craterTop(CR.x + CR.R + 20, 1) === GY && craterTop(CR.x - CR.R - 20, 1) === GY && craterTop(CR.x + 100, 0) === GY &&
+    Array.from({ length: 60 }, (_, i) => craterTop(PX + i * 4, 1)).every((y, i, a) => i === 0 || y <= a[i - 1] + 1e-9));
   check('大きな文字は段階ごとに用意（段階 7 は 6 つ：瓦、全部〜クレーター）', buildShow(7, 1).caps.length === 6 && buildShow(0, 1).caps.length === 1 && buildShow(1, 1).caps.length === 1 && buildShow(8, 1).caps.length === 7 && buildShow(9, 1).caps.length === 8 && buildShow(10, 1).caps.length === 9 && buildShow(10, 1).caps.slice(-3).map(c => c.text).join('|') === '大陸、真っ二つ|地球に、ひび|地球、真っ二つ');
 
   // --- 連打の反応（イベント）---
@@ -338,14 +341,11 @@
   const hid = [];
   for (const [w, h] of scr) for (let st = 0; st < NS; st++) {
     const cam = camAt(st, showDur(st)), box = certBox(w, h, 1.5), sft = resultShift(st, cam, w, h, box), v = viewFor(cam, w, h), kk = v.k * sft.z;
-    const bot = st >= 8 ? BY + 7 : resultBottom(st);   // 段階 8 以上は本人の足もと（柱の上）が認定証にかぶらないこと
+    const bot = resultBottom(st);
     const foot = h / 2 + (bot - cam.cy) * kk + sft.y, head = h / 2 + (resultTop(st) - cam.cy) * kk + sft.y, sx = w / 2 + ((st >= 3 ? KX + 1 : 62) - cam.cx) * kk + sft.x;
-    if (box.portrait) { if (!(st >= 8 ? foot <= box.y - 4 : ((foot <= box.y - 4 || head < 28) && head >= 20))) hid.push(w + 'x' + h + ' 段階' + st + '（足 ' + foot.toFixed(0) + ' / 認定証の上端 ' + box.y.toFixed(0) + '）'); }
+    if (st >= 9) { /* 段階 9〜10 は下の「地球ぜんぶ」の検査で見る */ }
+    else if (box.portrait) { if (!(st >= 8 ? foot <= box.y - 4 : ((foot <= box.y - 4 || head < 28) && head >= 20))) hid.push(w + 'x' + h + ' 段階' + st + '（足 ' + foot.toFixed(0) + ' / 認定証の上端 ' + box.y.toFixed(0) + '）'); }
     else if (!(sx + 28 * kk <= box.x - 4 || sx <= box.x * 0.5 + 1)) hid.push(w + 'x' + h + ' 段階' + st);
-    if (st >= 9) {   // 地球ぜんぶが、認定証にかぶらず画面に入る
-      const top = h / 2 + (GY - cam.cy) * kk + sft.y, bottom = h / 2 + (GY + 2 * PR - cam.cy) * kk + sft.y;
-      if (box.portrait ? (top < 0 || bottom > box.y - 2 || sx - PR * kk < 0 || sx + PR * kk > w) : (top < 0 || bottom > h || sx - PR * kk < 0 || sx + PR * kk > box.x - 2)) hid.push(w + 'x' + h + ' 段階' + st + '（地球がはみ出す）');
-    }
     if (box.x < 0 || box.y < 0 || box.x + box.w > w + 0.5 || box.y + box.h > h + 0.5) hid.push(w + 'x' + h + ' 認定証が画面の外');
   }
   check(scr.length + ' 種類の画面 × 11 段階で、認定証（一覧が 3 行になる高さ）が画面内に収まり、本人の足もとにかぶらず、段階 9〜10 は地球ぜんぶが入る（絵をずらし・縮めて）', hid.length === 0, hid.slice(0, 4).join(' / ') || scr.length + ' 種類 × 11 段階');
@@ -362,10 +362,49 @@
   check('カメラが引くにつれて地面が丸くなる（地面の丸みは引くほど増える）。段階 7 までは平ら（0）', epsMono && [0, 1, 2, 3, 4, 5, 6, 7].every(st => spaceAt(st, showDur(st)).eps === 0), 'eps(3.0)=' + spaceAt(10, 3.0).eps.toFixed(2));
   const L = xfPoint(spN[2], -1, PX - 100, GY), Rg = xfPoint(spN[2], 1, PX + 100, GY);
   check('段階 10：地球の左の半分は左へ、右の半分は右へ離れる（足場の柱は動かない）', L.x < PX - 100 - SPLITD * 0.9 && Rg.x > PX + 100 + SPLITD * 0.9 && Math.abs(halfXf(NOSP, -1).dx) === 0, L.x.toFixed(0) + ' / ' + Rg.x.toFixed(0));
-  check('足場の柱は引くほど画面で細くならない幅にする（平らなときは ' + PW + '、宇宙では広がる）', pillarW(0.5, 0) === PW && pillarW(0.03, 1) > PW * 5 && pillarW(0.6, 0.04) === PW);
-  check('穴の縁・足場の柱の幅を変えても、クレーターの形は保たれる（柱の上は穴の外の高さ BY）', craterTop(PX, 1, 200) === BY && craterTop(PX + 90, 1, 200) === BY && craterTop(PX + 150, 1, 200) > BY + 50 && craterTop(PX + 150, 1) > BY + 50 && craterTop(CR.x + CR.R + 20, 1, 200) === GY);
+  // 本人は穴の底に立つ（足場の柱はどこにもない）。穴を掘る間いっしょに下がり、段階 8〜10 では穴のある側の半分に乗ったまま動く
+  const fy = S => heroFeet(S, showDur(S));
+  check('段階 7：穴を掘る間、本人も底まで下がる（掘る前は下の階 y=' + BY + '、掘り終わりは穴の底 y=' + FLOOR_Y + '）。下がり方はなめらか（途中で上がらない・飛ばない）',
+    Math.abs(heroFeet(7, 3.0).y - BY) < 0.5 && Math.abs(fy(7).y - FLOOR_Y) < 0.5 &&
+    (() => { let prev = heroFeet(7, 3.0).y, ok = true; for (let t = 3.0; t <= CFG.craterT[1] + 1e-9; t += 0.01) { const y = heroFeet(7, t).y; if (y < prev - 0.01 || y - prev > 12) ok = false; prev = y; } return ok; })(),
+    'y=' + heroFeet(7, 3.0).y.toFixed(1) + '→' + fy(7).y.toFixed(1));
+  check('段階 8〜10：本人の足もとは、いつも穴の底の点（クレーターの中心）と同じ動き＝穴の底に乗ったまま（宙に浮かない・何もない所に立たない）',
+    [8, 9, 10].every(S => [4.0, 4.9, 5.5, 6.2, showDur(S)].every(t => t > showDur(S) + 1e-9 || (() => { const sp = spaceAt(S, t), q = xfPoint(sp, -1, CR.x, craterTop(KX, craterAt(S, t))), f = heroFeet(S, t); return t < CFG.craterT[1] + 0.3 || Math.hypot(f.x - q.x, f.y - q.y) < 1; })())));
+  const pS = spaceAt(10, showDur(10)), f10 = fy(10), f7 = fy(7);
+  check('段階 10：本人は割れた地球の左の半分（クレーターのある側）に乗ったまま、左へ ' + SPLITD.toFixed(0) + ' ほど離れる。クレーターは割れる線（x=' + EX + '）より左に丸ごと入り、本人の大きく描いた足もとも左側',
+    f10.x < f7.x - SPLITD * 0.9 && CR.x + CR.R + 20 <= EX && KX + 1 + 17 * HERO_MAX + 20 <= EX && pS.sp > 0.999 && fy(9).x < f7.x + 1 && Math.abs(fy(9).x - f7.x) < 120, 'x ' + f7.x.toFixed(0) + '→' + f10.x.toFixed(0));
+  check('割れた地球の右の半分は右へ離れる（二つに離れた隙間が見える：ぜんぶ開いた隙間は半径の ' + (4 * SPLITD / (2 * PR) * 100).toFixed(0) + '%）', xfPoint(pS, 1, EX + 100, GY).x > EX + 100 + SPLITD * 0.9 && SPLITD * 2 >= PR * 0.39);
+  check('本人を大きく見せる倍率は、穴の底の平らな部分（半幅 ' + CFL + '）に足が収まる大きさ以下（上限 ' + HERO_MAX + '）', HERO_MAX * 13 + 4 <= CFL * 2 && [0.03, 0.06, 0.1, 0.3, 1, 3].every(k => heroScale(10, k) <= HERO_MAX + 1e-9) && heroScale(2, 0.1) === 1);
+  check('穴の底に立つ本人の光の輪（段階 3 以上）は引くほど強く、宇宙まで引いても画面で十分な大きさ（半径 36px 以上）', haloAmt(7, 0.03) === 1 && haloAmt(2, 0.03) === 0 && haloAmt(7, 3) === 0 && haloR(0.03) * 0.03 >= 36 - 1e-9);
   const zs = [[390, 844], [375, 667], [1280, 720], [1950, 1135], [1024, 768], [844, 390]].map(([w, h]) => { const b = certBox(w, h, 1.5); return [9, 10].map(st => resultShift(st, camAt(st, showDur(st)), w, h, b).z); });
-  check('認定証の横・上の空きに地球が入らないときだけ、絵を縮める（段階 9〜10 は 1 以下、段階 8 以下は縮めない）', zs.every(r => r.every(z => z > 0.3 && z <= 1)) && [3, 7, 8].every(st => resultShift(st, camAt(st, showDur(st)), 390, 844, certBox(390, 844, 1.5)).z === 1), JSON.stringify(zs));
+  check('段階 9〜10 は、認定証の空きに合わせて絵を縮め／広げる（倍率 0.3〜1.35）。段階 8 以下は縮めない', zs.every(r => r.every(z => z > 0.3 && z <= 1.35 + 1e-9)) && [3, 7, 8].every(st => resultShift(st, camAt(st, showDur(st)), 390, 844, certBox(390, 844, 1.5)).z === 1), JSON.stringify(zs.map(r => r.map(z => +z.toFixed(2)))));
+
+  // 段階 9・10 の結果画面：地球ぜんぶ（割れた二つの半分）・月と星・本人（光の輪つき）・残る吹き出しが、画面内で認定証と重ならない
+  // （描画と同じ式：画面 x = W/2 + (世界 x − カメラ中心) × 倍率 + ずらし）。第 6 回までは 697×787 のような画面で、上の吹き出しと本人が上端で切れていた
+  const fitScr = [[390, 844], [375, 812], [375, 667], [360, 640], [412, 915], [697, 787], [768, 1024], [600, 1200], [844, 390], [1024, 768], [1280, 720], [1950, 1135], [1920, 1080], [2560, 1080]];
+  const fitBad = [], gaps = [];
+  for (const [w, h] of fitScr) for (const st of [9, 10]) {
+    const cam = camAt(st, showDur(st)), box = certBox(w, h, 1.5), sft = resultShift(st, cam, w, h, box), kk = viewFor(cam, w, h).k * sft.z;
+    const X = wx => w / 2 + (wx - cam.cx) * kk + sft.x, Y = wy => h / 2 + (wy - cam.cy) * kk + sft.y, tag = w + 'x' + h + ' 段階' + st + ' ';
+    const free = box.portrait ? { x0: 0, x1: w, y0: 0, y1: box.y } : { x0: 0, x1: box.x, y0: 0, y1: h };
+    const inFree = (x0, y0, x1, y1, what) => { if (x0 < free.x0 - 0.5 || x1 > free.x1 + 0.5 || y0 < free.y0 - 0.5 || y1 > free.y1 + 0.5) fitBad.push(tag + what + '（' + [x0, y0, x1, y1].map(Math.round).join(',') + '）'); };
+    const sdx = st >= 10 ? SPLITD : 0;
+    inFree(X(EX - PR - sdx), Y(GY - 6), X(EX + PR + sdx), Y(PCY + PR), '地球');
+    inFree(X(MOON.x - MOON.r), Y(MOON.y - MOON.r), X(MOON.x + MOON.r), Y(MOON.y + MOON.r), '月');
+    inFree(X(STAR.x - STAR.r), Y(STAR.y - STAR.r), X(STAR.x + STAR.r), Y(STAR.y + STAR.r), '星');
+    const sp = spaceAt(st, showDur(st)), ft = heroFeet(st, showDur(st)), sc = heroScale(st, kk), hr = Math.max(34 * kk, 36);   // 光の輪の画面での半径
+    inFree(X(ft.x) - hr, Y(ft.y - 27) - hr, X(ft.x) + hr, Y(ft.y - 27) + hr, '本人の光の輪');
+    inFree(X(ft.x) - 17 * sc * kk, Y(ft.y) - 31 * sc * kk, X(ft.x) + 17 * sc * kk, Y(ft.y), '本人');
+    for (const b of bubblesFor(st)) {
+      if (b.t1 !== Infinity) continue;
+      const q = bubbleSpot(b.who, st, showDur(st), kk), bw = b.text.length * 14 + 18, hh = 27 + 9;
+      inFree(Math.max(0, Math.min(X(q.x) - bw / 2, free.x1 - 6 - bw)), Y(q.y) - hh, Math.max(bw + 6, Math.min(X(q.x) + bw / 2, free.x1 - 6)), Y(q.y), '吹き出し「' + b.text + '」');
+    }
+    if (st === 10) gaps.push(2 * SPLITD * kk);
+    if (box.portrait ? Y(PCY + PR) > box.y - 2 : X(EX + PR + sdx) > box.x - 2) fitBad.push(tag + '地球が認定証にかぶる');
+  }
+  check(fitScr.length + ' 種類の画面（縦 375×812・697×787 ほか、横・PC）の段階 9・10 の結果で、地球の円・月と星・本人と光の輪・残る吹き出しがすべて画面内、かつ認定証と重ならない', fitBad.length === 0, fitBad.slice(0, 4).join(' / ') || fitScr.length + ' 種類 × 2 段階');
+  check('段階 10 の結果：二つに離れた隙間が画面ではっきり見える（どの画面でも 24px 以上）', gaps.length === fitScr.length && Math.min(...gaps) >= 24, '最小 ' + Math.min(...gaps).toFixed(0) + 'px');
 
   // 崩れた物（屋根・壁・柱・床板・台）が、本人の足もとに縦に立ったり重なったりしない
   const ZC0 = KX + 8, ZR0 = 36;
@@ -379,7 +418,7 @@
       if (Math.abs(xl - ZC0) < ZR0 + p.ex - 0.5) zoneBad.push('段階' + st + ' ' + p.g + ' 着地 x=' + xl.toFixed(0) + ' 半幅' + p.ex.toFixed(0));
       if (p.edge === '#8a3a2a') roofMax = Math.max(roofMax, p.hh * 2);
       if (2 * p.hh > 40.5) tallBad.push('段階' + st + ' ' + p.g + ' 高さ' + (2 * p.hh).toFixed(0));
-      if (st === 7 && xl > PX - PW / 2 - 4 - p.ex && xl < PX + PW / 2 + 4 + p.ex) pillarBad++;
+      if (st >= 7) { const o2 = poseAt(p, sh.dur + 3, { x: 0, y: 0, a: 0, al: 1, s: 1 }); if (o2.al > 0.02 && Math.abs(o2.x - CR.x) < CR.R * 0.9 && o2.y > GY + 5) pillarBad++; }   // 穴の中に残る破片
       const o = poseAt(p, sh.dur + 3, { x: 0, y: 0, a: 0, al: 1, s: 1 });   // 結果のあと（着地して落ち着いた姿勢）
       if (p.lie ? Math.abs(Math.cos(o.a)) > 0.02 : Math.abs(Math.sin(o.a)) > 0.02) angBad++;
     }
@@ -387,7 +426,7 @@
   check('段階 3〜10 のどの見せ場でも、崩れた物は本人の足もと（x=' + ZC0 + ' の左右 ' + ZR0 + '＋物の幅）に着地しない', zoneBad.length === 0 && nBig > 500, zoneBad.slice(0, 3).join(' / ') || '対象 ' + nBig + ' 個');
   check('崩れた物は着地して横になる（縦に立ったまま止まらない）：落ち着いた向きが、背の低い向き（長い辺が横）', angBad === 0, 'bad=' + angBad);
   check('屋根は薄い板に分かれて飛ぶ（1 枚の高さ ' + roofMax.toFixed(1) + ' 以下）。着地して立つ高さは壁でも ' + 40 + ' 以下', roofMax > 0 && roofMax <= 14.5 && tallBad.length === 0, tallBad.slice(0, 3).join(' / '));
-  check('段階 7：足場の柱の上に、屋根・柱・壁・床板の破片が残らない（柱の上は本人だけ）', pillarBad === 0, 'bad=' + pillarBad);
+  check('段階 7〜10：穴の中（本人の立つ底・壁）に、屋根・柱・壁・床板の破片が残らない（穴の底は本人だけ）', pillarBad === 0, 'bad=' + pillarBad);
   const roofN = st => buildShow(st, 5).pieces.filter(p => p.edge === '#8a3a2a').length;
   check('屋根の板の数は 20〜60 枚で、全段階の破片の合計が上限（' + CFG.maxPieces + '）以内', roofN(4) >= 20 && roofN(4) <= 60 && ALLS.every(st => buildShow(st, 5).pieces.length <= CFG.maxPieces), roofN(4) + ' 枚');
   startPlay(); Game.count = TOP; advance(CFG.duration + 0.01); while (Game.mode === 'finish') Game.step(CFG.h);

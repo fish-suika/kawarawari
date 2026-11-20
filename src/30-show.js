@@ -8,13 +8,18 @@ const KX = 38;                                         // 空手家の x
 const TX = 74, TW = 30, TP = 3, TH = 2.7, TB = 128;    // 瓦の中心x・幅・ピッチ・厚み・台の上の y
 const DL = -70, DR = 160;                              // 道場の内側の左右
 const HX0 = -12, HX1 = 118;                            // 段階 3 で床が抜ける範囲
-const PX = KX + 1, PW = 42;                            // 最後に残る足場の柱（中心x・幅）
-const CR = { x: PX, R: 230, D: 300 };                  // クレーター（中心x・半径・深さ）
-// ---- 段階 8〜10（宇宙へ。本人の最終修正 2026-11-20）：地球は半径 PR の円で、中心は (PX, PCY)。地面の頂点 (PX, GY) が地球のてっぺん ----
-const PR = 5200, PCY = GY + PR;
-const ANG0 = 0.07, SPLITD = 0.16 * PR, SPLITA = 0.05;  // 大陸が割れて開く角度／地球が割れて離れる距離・傾き
-const MOON = { x: PX + 5950, y: PCY - 2300, r: 520 };   // びっくり顔の月
-const STAR = { x: PX - 5900, y: PCY - 3300, r: 330 };   // びっくり顔の星
+const PX = KX + 1;                                     // クレーターの中心x（本人の立つ場所）
+const CR = { x: PX, R: 230, D: 300 };                  // クレーター（中心x・半径・深さ）。本人は穴のいちばん深い底に立つ（足場の柱はない：本人の依頼 2026-11-20）
+const CFL = 70;                                        // 穴の底の平らな部分の半幅（本人の足が乗る）
+const FLOOR_Y = GY + CR.D;                             // 穴の底の高さ（世界の y）
+// ---- 段階 8〜10（宇宙へ。本人の最終修正 2026-11-20）：地球は半径 PR の円。中心の x は EX（地球が割れる線。クレーターの右の外）----
+// 地面の (PX, GY)（クレーターの中心）が地球の表面に乗るよう、中心の y は cyOf(半径) で決める。本人のいるクレーターは左の半分に丸ごと乗る
+const PR = 5200, EX = 295, EDX = EX - PX;
+const cyOf = Re => GY + Math.sqrt(Re * Re - EDX * EDX);
+const PCY = cyOf(PR);
+const ANG0 = 0.07, SPLITD = 0.2 * PR, SPLITA = 0.05;  // 大陸が割れて開く角度／地球が割れて離れる距離・傾き
+const MOON = { x: EX + 5950, y: PCY - 2300, r: 520 };   // びっくり顔の月
+const STAR = { x: EX - 5900, y: PCY - 3300, r: 330 };   // びっくり顔の星
 // 地球の表面に立つ小さな家と住人（中心から測った弧の長さ。割れても自分の側に乗ったまま万歳している）
 const FOLK = [[-1950, 'man'], [-1700, 'house'], [-1400, 'man'], [-1100, 'house'], [-800, 'man'], [800, 'man'], [1100, 'house'], [1400, 'man'], [1700, 'house'], [1950, 'man']];
 const GRAV = 700;
@@ -29,9 +34,9 @@ const CAMS = [BASE_CAM, BASE_CAM, BASE_CAM,
   { cx: 45, cy: 60, w: 760, h: 420 },        // 5 町内
   { cx: 45, cy: 15, w: 800, h: 470 },        // 6 裏山
   { cx: 39, cy: 215, w: 820, h: 560 },       // 7 クレーター
-  { cx: PX, cy: 640, w: 4200, h: 3000 },     // 8 地平線が丸く見える高さ（大陸が裂ける）
-  { cx: PX, cy: PCY, w: 13200, h: 13200 },   // 9 宇宙から見た地球の全体
-  { cx: PX, cy: PCY, w: 13200, h: 13200 }];  // 10 地球が割れて離れる
+  { cx: (PX + EX) / 2, cy: 640, w: 4200, h: 3000 },   // 8 地平線が丸く見える高さ（大陸が裂ける。クレーターと割れ目の間が真ん中）
+  { cx: EX, cy: PCY, w: 13200, h: 13200 },   // 9 宇宙から見た地球の全体
+  { cx: EX, cy: PCY, w: 13200, h: 13200 }];  // 10 地球が割れて離れる
 // 各段階で「画面に入っていてほしい範囲」（検証でカメラが覆っているか確かめる）
 const EXTENT = [
   { x0: 10, x1: 100, y0: 60, y1: 150 }, { x0: 10, x1: 100, y0: 60, y1: 150 }, { x0: 10, x1: 100, y0: 60, y1: 150 },
@@ -41,8 +46,8 @@ const EXTENT = [
   { x0: -260, x1: 350, y0: -210, y1: 225 },
   { x0: CR.x - CR.R, x1: CR.x + CR.R, y0: 60, y1: GY + CR.D },
   { x0: PX - 1900, x1: PX + 1900, y0: -300, y1: 1400 },
-  { x0: PX - PR - 300, x1: PX + 6500, y0: GY - 300, y1: GY + 2 * PR + 300 },
-  { x0: PX - PR - 300 - SPLITD, x1: PX + 6500, y0: GY - 300, y1: GY + 2 * PR + 300 }];
+  { x0: EX - PR - 300, x1: EX + 6500, y0: GY - 300, y1: GY + 2 * PR + 300 },
+  { x0: EX - PR - 300 - SPLITD, x1: EX + PR + 300 + SPLITD, y0: GY - 300, y1: GY + 2 * PR + 300 }];
 // 裏山（左半分・右半分。ぎざぎざの稜線）
 const MT_L = [-260, 140, -190, 50, -130, -40, -85, -95, -40, -150, 10, -185, 45, -210, 45, 140];
 const MT_R = [45, -210, 80, -170, 135, -110, 190, -40, 255, 40, 350, 140, 45, 140];
@@ -109,7 +114,7 @@ function bubbleSpot(who, S, t, k) {
     return { x: q.x + Math.sin(a) * up, y: q.y - Math.cos(a) * up };
   }
   if (who[0] === 'r') {
-    const r = RESIDENTS[+who[1]], q = xfPoint(sp, r.x < PX ? -1 : 1, r.x, HILL_TOP - 30);
+    const r = RESIDENTS[+who[1]], q = xfPoint(sp, r.x < EX ? -1 : 1, r.x, HILL_TOP - 30);
     return S >= 8 ? q : { x: r.x, y: HILL_TOP - 30 };
   }
   const i = CAST.findIndex(a => a.id === who), a = CAST[i];
@@ -126,18 +131,25 @@ function certBox(W, H, ratio) {
   const pad = 14, w = Math.max(160, Math.min(W * 0.46, 460, (H - pad * 2) / ratio)), h = w * ratio;   // 横：右側
   return { portrait: false, w, h, x: W - w - pad, y: (H - h) / 2 };
 }
-// 認定証より上に見せたい一番下／一番上の高さ（世界の y）。クレーターの段階は穴の底まで、ほかは本人の足もと（影まで）。段階 8 は割れ目の深いところまで、段階 9〜10 は地球ぜんぶ
-const resultBottom = S => (S >= 9 ? GY + PR * 2.1 : S === 8 ? GY + 1800 : S >= 7 ? GY + CR.D + 4 : (S >= 3 ? BY : GY) + 7);
+// 認定証より上に見せたい一番下／一番上の高さ（世界の y）。クレーターの段階は穴の底まで、ほかは本人の足もと（影まで）。段階 8 は穴の底のまま左の半分が傾くぶんの余裕つき（段階 9〜10 は resultFit で地球ぜんぶを収める）
+const resultBottom = S => (S >= 9 ? GY + PR * 2.1 : S === 8 ? GY + 400 : S >= 7 ? FLOOR_Y + 4 : (S >= 3 ? BY : GY) + 7);
 const resultTop = S => (S >= 9 ? GY - PR * 0.05 : S === 8 ? GY - 500 : (S >= 3 ? BY : GY) - 64);
+// 段階 9〜10 の結果の絵：地球ぜんぶ（割れて離れた二つの半分・月と星）と、本人の光の輪・残る吹き出しが、認定証を避けた空きに収まるよう
+// 縮め／広げ（z。上限 1.35）、空きの真ん中へずらす（x, y は画面 px）。地球のてっぺんの上には FIT_TOP px（光の輪・吹き出しの高さ）を空ける
+const FIT_TOP = 50;
+function resultFit(S, cam, W, H, box) {
+  const k0 = viewFor(cam, W, H).k, fx0 = 8, fy0 = 8, fx1 = box.portrait ? W - 8 : box.x - 12, fy1 = box.portrait ? box.y - 10 : H - 8;
+  const sd = S >= 10 ? SPLITD : 0;
+  const x0 = Math.min(EX - PR - sd, STAR.x - STAR.r), x1 = Math.max(EX + PR + sd, MOON.x + MOON.r), y0 = GY - 8, y1 = PCY + PR + 6;
+  const kz = Math.max(1e-4, Math.min(k0 * 1.35, (fx1 - fx0) / (x1 - x0), (fy1 - fy0 - FIT_TOP) / (y1 - y0)));
+  const top = fy0 + FIT_TOP + ((fy1 - fy0 - FIT_TOP) - (y1 - y0) * kz) / 2;   // 地球のてっぺんが画面のどこに来るか
+  return { x: (fx0 + fx1) / 2 - W / 2 - ((x0 + x1) / 2 - cam.cx) * kz, y: top - (H / 2 + (y0 - cam.cy) * kz), z: kz / k0 };
+}
 // 認定証が出るとき、見せ場の最後の絵が認定証にかぶらないよう絵をずらす量（画面 px。負＝上／左へ）。cam は見せ場の最後のカメラ
-// 戻り値の z：絵を縮める倍率（地球ぜんぶを認定証の横／上の空きに収めるときだけ 1 より小さい）
+// 戻り値の z：絵を縮める倍率（段階 9〜10 だけ 1 でなくなる）
 function resultShift(S, cam, W, H, box) {
-  const k0 = viewFor(cam, W, H).k;
-  let z = 1;
-  if (S >= 9) {
-    const D = (resultBottom(S) - resultTop(S)) * k0, room = box.portrait ? box.y - 18 - 28 : box.x - 12 - 20;
-    if (D > room) z = room / D;
-  }
+  if (S >= 9) return resultFit(S, cam, W, H, box);
+  const k0 = viewFor(cam, W, H).k, z = 1;
   const k = k0 * z;
   const footY = H / 2 + (resultBottom(S) - cam.cy) * k, headY = H / 2 + (resultTop(S) - cam.cy) * k;
   if (box.portrait) return { x: 0, y: Math.max(Math.min(0, box.y - 18 - footY), 26 - headY), z };   // 足もとが認定証の上に出るまで。頭は画面内に
@@ -166,19 +178,27 @@ function spaceAt(S, t) {
   if (S >= 10) o.glb *= 1 - smooth((o.sp - 0.1) / 0.5);   // 割れたら中身（地層・マグマ）を見せる
   return o;
 }
-// 地球の左右の半分の動き（side：-1 左・+1 右）。中心まわりに開く角度と、横に離れる距離
+// 地球の左右の半分の動き（side：-1 左・+1 右。割れる線は x=EX。本人のいるクレーターは左の半分）。中心まわりに開く角度と、横に離れる距離
 function halfXf(sp, side) { return { dx: side * SPLITD * sp.sp, rot: side * (sp.ang + SPLITA * sp.sp) }; }
 function xfPoint(sp, side, x, y) {
-  const h = halfXf(sp, side), c = Math.cos(h.rot), s = Math.sin(h.rot), ux = x - PX, uy = y - PCY;
-  return { x: PX + ux * c - uy * s + h.dx, y: PCY + ux * s + uy * c };
+  const h = halfXf(sp, side), c = Math.cos(h.rot), s = Math.sin(h.rot), ux = x - EX, uy = y - PCY;
+  return { x: EX + ux * c - uy * s + h.dx, y: PCY + ux * s + uy * c };
 }
-// 表面の弧の長さ s の点（外向きの角度 a つき）。Re：そのときの地球の半径
+// 表面の弧の長さ s（地球のてっぺん x=EX から測る）の点（外向きの角度 a つき）。Re：そのときの地球の半径
 function surfPt(s, Re) {
   const a = s / Re;
-  return { x: PX + Re * Math.sin(a), y: GY + Re - Re * Math.cos(a), a };
+  return { x: EX + Re * Math.sin(a), y: cyOf(Re) - Re * Math.cos(a), a };
 }
-// 足場の柱の幅（引いたときは画面で細くなりすぎないよう広げる）
-const pillarW = (k, eps) => (eps > 0.05 ? Math.max(PW, 14 / k) : PW);
+// 本人の光の輪の強さ・大きさ、引いたときに本人を大きく見せる倍率（見つけられる大きさ・穴の底に収まる大きさ）
+const HERO_MAX = 10;
+const haloAmt = (S, k) => (S >= 3 ? clamp((2.6 - k) / 1.4, 0, 1) : 0);
+const haloR = k => Math.max(34, 36 / k);
+function heroScale(S, k) {
+  if (haloAmt(S, k) <= 0) return 1;
+  let sc = 1 + 0.28 * clamp((1.1 - k) / 0.6, 0, 1);
+  if (S >= 8) sc = Math.max(sc, Math.min(HERO_MAX, 24 / (31 * k)));
+  return sc;
+}
 
 // 乱数（シード付き。同じシードなら同じ壊れ方）
 function mkRng(seed) {
@@ -212,13 +232,11 @@ function craterAt(S, t) {
   if (S < 7) return 0;
   return smooth((t - CFG.craterT[0]) / (CFG.craterT[1] - CFG.craterT[0]));
 }
-// 地面の上端（クレーターで掘れた後。足場の柱だけ残る）
-function craterTop(x, cp, pw) {
-  if (pw === undefined) pw = PW;
-  const u = (x - CR.x) / CR.R;
-  let y = GY + (cp > 0 && Math.abs(u) < 1 ? cp * CR.D * Math.pow(1 - u * u, 0.75) : 0);
-  if (x > PX - pw / 2 && x < PX + pw / 2) y = Math.min(y, BY);
-  return y;
+// 地面の上端（クレーターで掘れた後）。真ん中の底（半幅 CFL）が平らで、本人はそこに立つ。まわりは外へ向かって浅くなる
+function craterTop(x, cp) {
+  const u = (Math.abs(x - CR.x) - CFL) / (CR.R - CFL);
+  if (!(cp > 0) || u >= 1) return GY;
+  return GY + cp * CR.D * (u <= 0 ? 1 : Math.pow(1 - u * u, 0.75));
 }
 // 画面の揺れ（px）・光（0〜）
 function shakeAt(sh, t, o) {
@@ -255,7 +273,18 @@ function karaAt(sh, t) {
     const tt = t - FALL_T, fall = BY - GY, tl = Math.sqrt(2 * fall / GRAV);
     o.dy = tt < tl ? 0.5 * GRAV * tt * tt : fall - 3 * Math.exp(-(tt - tl) * 7) * Math.abs(Math.sin((tt - tl) * 16));
   }
+  if (S >= 7) {                 // 穴が掘れる間、地面がしずむのに乗って、本人も穴の底まで下がる。底に着いたら少しはずむ
+    const dg = craterTop(KX, craterAt(S, t)) - GY;
+    if (dg > o.dy) o.dy = dg;
+    const tb = t - CFG.craterT[1];
+    if (tb > 0) o.dy -= 3 * Math.exp(-tb * 7) * Math.abs(Math.sin(tb * 16));
+  }
   return o;
+}
+// 時刻 t の本人の足もと（世界の座標）。段階 8 以上は割れた地球の左の半分（クレーターのある側）に乗って動く
+function heroFeet(S, t) {
+  const k = karaAt({ stage: S }, t), sp = S >= 8 ? spaceAt(S, t) : NOSP;
+  return xfPoint(sp, -1, KX + 1 + k.dx, GY + k.dy);
 }
 
 // ---- 破片 ----
@@ -495,7 +524,7 @@ function buildShow(S, seed) {
   for (let n = 0; n < 4; n++) puff(45 + (n - 1.5) * 40, GY - 20, 20, 60 + n * 6, T(6, 2.85 + n * 0.05), 0.9, '#e8f0e8');
   if (S >= 6) { shake(2.8, 14, 0.9); flash(2.8, 0.25); cue(2.8, 'mountain'); cue(3.0, 'crash'); }
 
-  // ---- 地面（段階 7）：大きなクレーター。足場だけが細い柱で残る ----
+  // ---- 地面（段階 7）：大きなクレーター。本人は穴の底に立つ ----
   const t7 = CFG.craterT[0];
   for (let n = 0; n < 100; n++) {
     const s = rg(5, 14), tri = rg(0, 1) < 0.5, poly = tri ? [-s, s * 0.6, 0, -s, s, s * 0.6] : box(s, s * 0.8);
@@ -508,12 +537,12 @@ function buildShow(S, seed) {
     p.vx = (CR.x + sgn() * (CR.R + rr(15, 260)) - x0) / p.tl;   // 穴の外の地面に降る
   }
   for (let n = 0; n < 10; n++) puff(CR.x + (n - 4.5) * 40, GY - 4, 25, 70, T(7, t7 + n * 0.03), 1.0, '#ead9bc');
-  if (S >= 7) { shake(t7, 22, 1.1); flash(t7, 0.75); cue(t7, 'crater'); cue(t7 + 0.05, 'rumble'); }
-  // クレーターの中に落ちた物は、掘られる時に消える（足場の柱の上の物は残る）
+  if (S >= 7) { shake(t7, 22, 1.1); flash(t7, 0.75); cue(t7, 'crater'); cue(t7 + 0.05, 'rumble'); cue(CFG.craterT[1], 'thud'); shake(CFG.craterT[1], 6, 0.3); }
+  // クレーターの中に落ちた物は、掘られる時に消える（穴の底は本人だけ）
   if (S >= 7) for (const p of P) {
     if (p.g === 'dirt' || p.g === 'puff' || p.g === 'mountain' || p.g === 'rock' || !isFinite(p.tb)) continue;
     const xr = p.kind === 'tilt' ? p.px : p.x + p.vx * (isFinite(p.tl) ? p.tl : 0), u = Math.abs(xr - CR.x) / CR.R;
-    if (u < 0.96 && !(xr > PX - PW / 2 - 4 && xr < PX + PW / 2 + 4)) p.fade = t7 + 0.1 + (1 - u) * 0.3;
+    if (u < 0.96) p.fade = t7 + 0.1 + (1 - u) * 0.3;
   }
 
   // ---- 反応の音（門下生・住人）----

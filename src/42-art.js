@@ -160,7 +160,8 @@ function drawBubble(c, v, wx, wy, text, pop) {
   c.save(); c.translate(wx, wy); c.scale(1 / k, 1 / k);
   c.font = 'bold ' + fs + 'px ' + FONT; c.textAlign = 'center'; c.textBaseline = 'middle';
   const tw = c.measureText(text).width, bw = tw + 18, bh = fs + 13;
-  const dx = clamp(sx - bw / 2, 6, W - 6 - bw) - (sx - bw / 2);    // 画面の中に収める
+  const maxX = Game.mode === 'over' && RESL.on && !RESL.portrait ? RESL.x - 8 : W - 6;   // 認定証が横にあるときは、その手前まで
+  const dx = clamp(sx - bw / 2, 6, Math.max(6, maxX - bw)) - (sx - bw / 2);    // 画面の中に収める
   const sc = 0.6 + 0.4 * Math.min(1, pop * 6), by = -9 - bh;
   c.scale(sc, sc);
   c.fillStyle = '#fffdf5'; c.strokeStyle = INK; c.lineWidth = 1.7; c.lineJoin = 'round';
@@ -237,13 +238,13 @@ function drawWires(sh, tp, v) {
 // ---- 本人のまわりの光の輪（引いたとき小さくなりすぎないように）----
 function haloStrength() {
   const sh = Game.show;
-  if (!sh || sh.stage < 3 || !(Game.mode === 'show' || Game.mode === 'over')) return 0;
-  return clamp((2.6 - CAMV.k) / 1.4, 0, 1);
+  if (!sh || !(Game.mode === 'show' || Game.mode === 'over')) return 0;
+  return haloAmt(sh.stage, CAMV.k);
 }
 function drawHalo(K) {
   const str = haloStrength();
   if (str <= 0.01) return;
-  const c = cx, k = CAMV.k, x = KX + 2 + K.dx, y = GY - 27 + K.dy, R = Math.max(34, 36 / k), pulse = 1 + Math.sin(nowT * 5) * 0.05;
+  const c = cx, k = CAMV.k, x = KX + 2 + K.dx, y = GY - 27 + K.dy, R = haloR(k), pulse = 1 + Math.sin(nowT * 5) * 0.05;
   c.save();
   const g = c.createRadialGradient(x, y, R * 0.15, x, y, R * 1.2);
   g.addColorStop(0, 'rgba(255,252,226,' + 0.7 * str + ')'); g.addColorStop(0.55, 'rgba(255,228,120,' + 0.3 * str + ')'); g.addColorStop(1, 'rgba(255,228,120,0)');
@@ -305,19 +306,19 @@ function drawStars(v, sp) {
 // 地球のまわりの薄い大気（水色のふち）
 function drawAtmo(v, sp) {
   if (sp.eps < 0.3) return;
-  const c = cx, Re = PR / sp.eps, ccy = GY + Re, th = Math.max(0.1 * Re, 18 / v.k), a = sp.a1 * (1 - sp.sp);
+  const c = cx, Re = PR / sp.eps, ccy = cyOf(Re), th = Math.max(0.1 * Re, 18 / v.k), a = sp.a1 * (1 - sp.sp);
   if (a < 0.01) return;
-  const g = c.createRadialGradient(PX, ccy, Re * 0.99, PX, ccy, Re + th);
+  const g = c.createRadialGradient(EX, ccy, Re * 0.99, EX, ccy, Re + th);
   g.addColorStop(0, 'rgba(140,210,255,' + 0.85 * a + ')'); g.addColorStop(1, 'rgba(90,160,255,0)');
-  c.fillStyle = g; c.beginPath(); c.arc(PX, ccy, Re + th, 0, 6.283); c.fill();
+  c.fillStyle = g; c.beginPath(); c.arc(EX, ccy, Re + th, 0, 6.283); c.fill();
 }
 // 割れ目の奥のマグマ（左右の半分より後ろ）
 function drawMagma(v, sp) {
   if (sp.magma < 0.01) return;
-  const c = cx, Re = PR / Math.max(sp.eps, 0.05), ccy = GY + Re;
-  const g = c.createLinearGradient(0, GY, 0, GY + Re * 2);
+  const c = cx, Re = PR / Math.max(sp.eps, 0.05), ccy = cyOf(Re);
+  const g = c.createLinearGradient(0, ccy - Re, 0, ccy + Re);
   g.addColorStop(0, '#fff3a8'); g.addColorStop(0.12, '#ffb83a'); g.addColorStop(0.45, '#ff7a2a'); g.addColorStop(1, '#a8281f');
-  c.globalAlpha = Math.min(1, sp.magma * 1.5); c.fillStyle = g; c.beginPath(); c.arc(PX, ccy, Re, 0, 6.283); c.fill(); c.globalAlpha = 1;
+  c.globalAlpha = Math.min(1, sp.magma * 1.5); c.fillStyle = g; c.beginPath(); c.arc(EX, ccy, Re, 0, 6.283); c.fill(); c.globalAlpha = 1;
 }
 // 角のない大きな塊（点を結ぶなめらかな閉じた線）
 function blob(c, pts, R, ox, oy) {
@@ -336,42 +337,43 @@ const GCLOUD = [[-0.35, -0.7, 0.2, 0.05], [0.32, -0.3, 0.24, 0.06], [-0.62, 0.08
 // 宇宙から見た地球（青い海と緑の大陸と雲）。glb で下の断面（地層・マグマ）と入れ替わる
 function drawGlobe(v, sp) {
   if (sp.glb < 0.01) return;
-  const c = cx, Re = PR / Math.max(sp.eps, 0.05), ccy = GY + Re, lw = 3 / v.k;
+  const c = cx, Re = PR / Math.max(sp.eps, 0.05), ccy = cyOf(Re), lw = 3 / v.k;
   c.save(); c.globalAlpha = sp.glb;
-  c.beginPath(); c.arc(PX, ccy, Re, 0, 6.283); c.clip();
-  let g = c.createRadialGradient(PX - Re * 0.35, ccy - Re * 0.4, Re * 0.1, PX, ccy, Re);
+  c.beginPath(); c.arc(EX, ccy, Re, 0, 6.283); c.clip();
+  let g = c.createRadialGradient(EX - Re * 0.35, ccy - Re * 0.4, Re * 0.1, EX, ccy, Re);
   g.addColorStop(0, '#86d4ff'); g.addColorStop(0.6, '#3b8fe0'); g.addColorStop(1, '#1f5db3');
-  c.fillStyle = g; c.fillRect(PX - Re, ccy - Re, 2 * Re, 2 * Re);
+  c.fillStyle = g; c.fillRect(EX - Re, ccy - Re, 2 * Re, 2 * Re);
   c.lineJoin = 'round'; c.fillStyle = '#6fcb74'; c.strokeStyle = '#3f9a52'; c.lineWidth = lw;
-  for (const L of LAND) { blob(c, L, Re, PX, ccy); c.fill(); c.stroke(); }
+  for (const L of LAND) { blob(c, L, Re, EX, ccy); c.fill(); c.stroke(); }
   c.fillStyle = 'rgba(255,255,255,0.82)';
-  for (const [x, y, rx, ry] of GCLOUD) { c.beginPath(); c.ellipse(PX + x * Re, ccy + y * Re, rx * Re, ry * Re, -0.25, 0, 6.283); c.fill(); }
-  c.fillStyle = '#f3fbff'; c.beginPath(); c.ellipse(PX, ccy + Re * 0.99, Re * 0.32, Re * 0.07, 0, 0, 6.283); c.fill();
-  g = c.createRadialGradient(PX + Re * 0.3, ccy + Re * 0.35, Re * 0.4, PX + Re * 0.3, ccy + Re * 0.35, Re * 1.3);
+  for (const [x, y, rx, ry] of GCLOUD) { c.beginPath(); c.ellipse(EX + x * Re, ccy + y * Re, rx * Re, ry * Re, -0.25, 0, 6.283); c.fill(); }
+  c.fillStyle = '#f3fbff'; c.beginPath(); c.ellipse(EX, ccy + Re * 0.99, Re * 0.32, Re * 0.07, 0, 0, 6.283); c.fill();
+  g = c.createRadialGradient(EX + Re * 0.3, ccy + Re * 0.35, Re * 0.4, EX + Re * 0.3, ccy + Re * 0.35, Re * 1.3);
   g.addColorStop(0, 'rgba(10,20,80,0)'); g.addColorStop(1, 'rgba(10,20,80,0.45)');
-  c.fillStyle = g; c.fillRect(PX - Re, ccy - Re, 2 * Re, 2 * Re);
+  c.fillStyle = g; c.fillRect(EX - Re, ccy - Re, 2 * Re, 2 * Re);
   c.restore();
-  c.strokeStyle = 'rgba(255,255,255,' + 0.7 * sp.glb + ')'; c.lineWidth = 2 / v.k; c.beginPath(); c.arc(PX, ccy, Re, 0, 6.283); c.stroke();
+  c.strokeStyle = 'rgba(255,255,255,' + 0.7 * sp.glb + ')'; c.lineWidth = 2 / v.k; c.beginPath(); c.arc(EX, ccy, Re, 0, 6.283); c.stroke();
 }
 
 // ---- 割れ目・ひび（光る線）----
 const RIFT = (() => {
-  const R = mkRng(555), main = [[PX, GY]];
-  let x = PX;
+  const R = mkRng(555), main = [[EX, GY]];   // 大陸が割れる線（x=EX）に沿って走る
+  let x = EX;
   for (let i = 1; i <= 16; i++) { x += (R() - 0.5) * (i < 3 ? 30 : 160); main.push([x, GY + i * 140]); }
   const br = (i, dir) => { const a = [main[i].slice()]; let bx = main[i][0], by = main[i][1]; for (let j = 0; j < 4; j++) { bx += dir * (80 + R() * 120); by += 60 + R() * 90; a.push([bx, by]); } return a; };
   return [main, br(3, -1), br(5, 1), br(8, -1), br(10, 1)];
 })();
 const ECR = (() => {
   const R = mkRng(909), out = [];
+  // 0 番は地球が割れる線（x=EX、まっすぐ中心へ）。ほかは本人のいる穴の底から扇状に広がる
   [0, -0.45, 0.5, -0.85, 0.9, -1.15, 1.2].forEach((off, j) => {
-    let x = PX, y = GY + 4, d = Math.PI / 2 + off;
+    let x = j === 0 ? EX : PX, y = j === 0 ? GY - 2 : FLOOR_Y - 4, d = Math.PI / 2 + off;
     const p = [[x, y]];
     for (let i = 0; i < 30; i++) {
-      d = j === 0 ? Math.PI / 2 + (R() - 0.5) * 0.4 : d + (R() - 0.5) * 0.9;
+      d = j === 0 ? Math.PI / 2 + (R() - 0.5) * 0.06 : d + (R() - 0.5) * 0.9;
       const st = 330 + R() * 200;
       x += Math.cos(d) * st; y += Math.sin(d) * st;
-      if (Math.hypot(x - PX, y - PCY) > PR * 0.97) { p.push([x, y]); break; }
+      if (Math.hypot(x - EX, y - PCY) > PR * 0.97) { p.push([x, y]); break; }
       p.push([x, y]);
     }
     out.push(p);
@@ -405,7 +407,7 @@ function drawEarthCracks(v, sp) {             // 地球の表面に広がるひ�
   const a = 1 - clamp(sp.sp * 1.5, 0, 1);
   if (sp.ecr <= 0 || a <= 0.01) return;
   const c = cx, Re = PR;
-  c.save(); c.beginPath(); c.arc(PX, GY + Re, Re, 0, 6.283); c.clip();
+  c.save(); c.beginPath(); c.arc(EX, PCY, Re, 0, 6.283); c.clip();
   ECR.forEach((p, j) => { const f = sp.ecr * 1.5 - j * 0.06; if (f <= 0) return; trace(c, p, f); glowStroke(c, v.k, a); });
   c.restore();
 }
