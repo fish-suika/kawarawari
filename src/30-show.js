@@ -8,7 +8,7 @@ const KX = 38;                                         // 空手家の x
 const TX = 74, TW = 30, TP = 3, TH = 2.7, TB = 128;    // 瓦の中心x・幅・ピッチ・厚み・台の上の y
 const DL = -70, DR = 160;                              // 道場の内側の左右
 const HX0 = -12, HX1 = 118;                            // 段階 3 で床が抜ける範囲
-const PX = KX + 1, PW = 34;                            // 最後に残る足場の柱（中心x・幅）
+const PX = KX + 1, PW = 42;                            // 最後に残る足場の柱（中心x・幅）
 const CR = { x: PX, R: 230, D: 300 };                  // クレーター（中心x・半径・深さ）
 const GRAV = 700;
 const DROP_T = 1.1;                                    // 床が抜けて、床に載っていた物が落ちる時刻
@@ -18,7 +18,7 @@ const FALL_T = 1.0;                                    // 本人が下の階へ�
 const BASE_CAM = { cx: 50, cy: 88.89, w: 100, h: 177.78 };
 const CAMS = [BASE_CAM, BASE_CAM, BASE_CAM,
   { cx: 50, cy: 128, w: 150, h: 225 },       // 3 床が抜ける・下の階
-  { cx: 45, cy: 85, w: 320, h: 300 },        // 4 道場の建物
+  { cx: 0, cy: 85, w: 440, h: 300 },         // 4 道場の建物（外へ逃げた門下生も入る）
   { cx: 45, cy: 60, w: 760, h: 420 },        // 5 町内
   { cx: 45, cy: 15, w: 800, h: 470 },        // 6 裏山
   { cx: 39, cy: 215, w: 820, h: 560 }];      // 7 クレーター
@@ -34,6 +34,82 @@ const EXTENT = [
 const MT_L = [-260, 140, -190, 50, -130, -40, -85, -95, -40, -150, 10, -185, 45, -210, 45, 140];
 const MT_R = [45, -210, 80, -170, 135, -110, 190, -40, 255, 40, 350, 140, 45, 140];
 const STRATA = [[GY, '#86d06a'], [GY + 7, '#dcb47c'], [190, '#cb985e'], [255, '#bb8761'], [330, '#aa876c'], [400, '#c2a88e'], [470, '#98795f'], [560, '#806853'], [700, '#6e5a4c']];
+
+// ---- 道場の人たち（師範・門下生）と、避難した住人。位置と動作は時刻だけで決まる ----
+const CAST = [
+  { id: 'm', role: 'master', x: 8, s: 1.12 },
+  { id: 's1', role: 'student', x: 18.5, s: 0.95, belt: '#e8c23a', kneel: true },
+  { id: 's2', role: 'student', x: -5, s: 1.0, belt: '#5fb36a' },
+  { id: 's3', role: 'student', x: -14, s: 0.95, belt: '#e07a5f' },
+  { id: 's4', role: 'student', x: -24, s: 1.0, belt: '#5f8fe0' },
+];
+const FLEE_T = 0.62;                        // 床が抜ける前に、門下生が外へ逃げ始める時刻
+const fleeX = i => -165 - 7 * i;            // 逃げた先（道場の外。崩れた物が落ちる範囲より外）
+const HILLS = [{ x: -300, w: 62, h: 58 }, { x: 380, w: 62, h: 58 }];   // 住人が避難した高台（倒れた家より高い）
+const RESIDENTS = [{ x: -311, col: '#ff8a5c', hair: '#3a2a1c' }, { x: -289, col: '#5c9cff', hair: '#7a4a24' },
+  { x: 369, col: '#f2c94c', hair: '#2a2a2a' }, { x: 391, col: '#7bd389', hair: '#5a3a24' }];
+const HILL_TOP = GY - 58;
+function hillTop(hl, x) {
+  const d = Math.abs(x - hl.x);
+  if (d >= hl.w) return GY;
+  return GY - hl.h * (1 - smooth(Math.max(0, (d - 22) / (hl.w - 22))));
+}
+// 時刻 t の門下生・師範の姿（段階 S の見せ場）。o に x・pose・dir・kneel・ph を書く
+function castPose(a, i, S, t, o) {
+  const m = a.role === 'master';
+  o.x = a.x; o.pose = 'stand'; o.dir = 1; o.kneel = !!a.kneel; o.ph = t * 9 + i * 1.3;
+  if (S === 0) { o.pose = m ? 'fold' : (t > 0.15 ? 'wince' : 'stand'); return o; }
+  if (S === 1) { if (!m && i % 2 === 1 && t > 0.45 && (t * 3 + i * 0.37) % 1 < 0.3) o.pose = 'clap'; return o; }
+  if (S === 2) { if (t > 0.62) o.pose = 'gasp'; return o; }
+  const t0 = FLEE_T + i * 0.04, u = clamp((t - t0) / 0.75, 0, 1), fx = fleeX(i);
+  if (t < t0) { if (t > 0.45) o.pose = 'gasp'; return o; }
+  o.kneel = false; o.x = lerp(a.x, fx, u); o.dir = -1;
+  if (u < 1) { o.pose = 'run'; return o; }
+  o.dir = 1; o.pose = t < 1.6 ? 'shield' : 'look';
+  if (S >= 5) { const tr = 2.0 + i * 0.03; if (t >= tr) { o.x = fx - 250 * (t - tr); o.pose = 'run'; o.dir = -1; } }
+  return o;
+}
+// 段階ごとの吹き出し（誰が・何と・いつから・いつまで）。最後の吹き出しは結果のあとも残る
+function bubblesFor(S) {
+  const b = [], B = (who, text, t0, t1) => b.push({ who, text, t0, t1 });
+  if (S === 0) B('m', '……次', 0.6, Infinity);
+  else if (S === 1) { B('s3', 'パチ…', 0.45, 0.85); B('s1', 'パチ…パチ', 0.9, Infinity); }
+  else if (S === 2) B('s1', 'おおお……！', 0.7, Infinity);
+  else B('s1', 'おおっ！', 0.45, 0.68);
+  if (S >= 4) B('s2', '屋根が……！', 1.8, S === 4 ? Infinity : 2.05);
+  if (S >= 5) B('r0', 'うちが……', 2.7, S === 5 ? Infinity : 3.05);
+  if (S >= 6) B('r3', '山が……', 3.1, S === 6 ? Infinity : 3.5);
+  if (S >= 7) B('r2', '……破門', 3.5, Infinity);
+  return b;
+}
+// 吹き出しの出どころ（頭の上の世界座標）。見えない・まだいないときは null
+function bubbleSpot(who, S, t) {
+  const o = { x: 0, pose: '', dir: 1, kneel: false, ph: 0 };
+  if (who[0] === 'r') { const r = RESIDENTS[+who[1]]; return { x: r.x, y: HILL_TOP - 30 }; }
+  const i = CAST.findIndex(a => a.id === who), a = CAST[i];
+  castPose(a, i, S, t, o);
+  return { x: o.x, y: GY - (o.kneel ? 22 : 29) * a.s - 1 };
+}
+
+// 結果の認定証（DOM）の置き場所。画面 W×H px、認定証の縦横比 ratio（高さ/幅）
+function certBox(W, H, ratio) {
+  if (H >= W * 0.95) {                     // 縦：下に寄せる（画面の高さの 6 割まで）
+    const pad = 14, w = Math.min(W - pad * 2, 440, H * 0.6 / ratio), h = w * ratio;
+    return { portrait: true, w, h, x: (W - w) / 2, y: H - h - pad };
+  }
+  const pad = 14, w = Math.max(160, Math.min(W * 0.46, 460, (H - pad * 2) / ratio)), h = w * ratio;   // 横：右側
+  return { portrait: false, w, h, x: W - w - pad, y: (H - h) / 2 };
+}
+// 認定証より上に見せたい一番下の高さ（世界の y）。クレーターの段階は穴の底まで、ほかは本人の足もと（影まで）
+const resultBottom = S => (S >= 7 ? GY + CR.D + 4 : (S >= 3 ? BY : GY) + 7);
+// 認定証が出るとき、見せ場の最後の絵が認定証にかぶらないよう絵をずらす量（画面 px。負＝上／左へ）。cam は見せ場の最後のカメラ
+function resultShift(S, cam, W, H, box) {
+  const v = viewFor(cam, W, H), fy = S >= 3 ? BY : GY;
+  const footY = H / 2 + (resultBottom(S) - cam.cy) * v.k, headY = H / 2 + (fy - 64 - cam.cy) * v.k;
+  if (box.portrait) return { x: 0, y: Math.max(Math.min(0, box.y - 18 - footY), 26 - headY) };   // 足もとが認定証の上に出るまで。頭は画面内に
+  const sx = S >= 3 ? KX + 1 : 62, px = W / 2 + (sx - cam.cx) * v.k;
+  return { x: Math.min(0, (box.x - 12) / 2 - px), y: 0 };
+}
 
 // 乱数（シード付き。同じシードなら同じ壊れ方）
 function mkRng(seed) {
@@ -144,6 +220,20 @@ function poseAt(p, t, o) {
   return o;
 }
 
+// 家の窓・ドアの飾り（箱の中心が原点。[x, y, w, h, 色] の長方形を順に描く）
+function houseDec(w, h) {
+  const d = [], win = (x, y, ww, hh) => {
+    d.push([x - 0.7, y - 0.7, ww + 1.4, hh + 1.4, '#9a7048'], [x, y, ww, hh, '#d4f0ff'],
+      [x + ww / 2 - 0.25, y, 0.5, hh, '#9a7048'], [x, y + hh / 2 - 0.25, ww, 0.5, '#9a7048']);
+  };
+  win(-w * 0.4, -h * 0.3, w * 0.24, h * 0.24);
+  win(-w * 0.4, h * 0.06, w * 0.24, h * 0.22);
+  d.push([w * 0.1, h / 2 - h * 0.42, w * 0.24, h * 0.42, '#b9824a'], [w * 0.1 + w * 0.17, h / 2 - h * 0.22, 1, 1, '#ffe27a']);
+  win(w * 0.16, -h * 0.3, w * 0.2, h * 0.2);
+  d.push([-w / 2, h / 2 - 1.6, w, 1.6, '#00000020']);
+  return d;
+}
+
 // 段階 S までの見せ場を作る。S より上の物は壊れずに（tb = Infinity）そのまま置いてある
 function buildShow(S, seed) {
   const R = mkRng(seed), RG = mkRng(CFG.seed + 99);   // R：飛び方（連打数で変わる） RG：形・切れ目（いつも同じ）
@@ -158,7 +248,7 @@ function buildShow(S, seed) {
   function add(o) {
     const p = Object.assign({ g: '', idx: 0, x: 0, y: 0, poly: null, col: '#ccc', edge: null, lay: 3, kind: 'fly', tb: Infinity,
       vx: 0, vy: 0, w: 0, fy: Infinity, fy2: Infinity, drop: Infinity, fade: Infinity, hid: false, hh: 1, tl: Infinity,
-      dec: null, ck: null, ckT: Infinity }, o);
+      dec: null, decp: null, deco: null, ck: null, ckT: Infinity }, o);
     if (p.poly) { let m = 0; for (let i = 1; i < p.poly.length; i += 2) m = Math.max(m, Math.abs(p.poly[i])); p.hh = m; }
     P.push(p);
     return p;
@@ -183,7 +273,7 @@ function buildShow(S, seed) {
     for (let j = 0; j < 3; j++) {
       const xa = xs[j], xb = xs[j + 1], cx = (xa + xb) / 2, side = j === 0 ? -1 : j === 2 ? 1 : sgn();
       const p = add({ g: 'tile', idx: k, x: cx, y: cy, poly: [xa - cx, -hy, xb - cx, -hy, xb + sl[j + 1] - cx, hy, xa + sl[j] - cx, hy],
-        col: i % 2 ? '#667c92' : '#5b7188', edge: '#33414f', tb, vx: side * rr(16, 48), vy: -rr(50, 130), w: side * rr(2, 9) });
+        col: i % 2 ? '#7690ab' : '#6a84a0', edge: '#3b4a5c', deco: 'tile', tb, vx: side * rr(16, 48), vy: -rr(50, 130), w: side * rr(2, 9) });
       settle(p, 2);
       if (S >= 3) { const xl = p.x + p.vx * p.tl; if (xl > HX0 && xl < HX1) { p.drop = DROP_T; p.fy2 = BY - p.hh; } }   // 床が抜けたら一緒に落ちる
       const w = xb - xa;   // ひび（割れずに残る瓦）
@@ -200,7 +290,7 @@ function buildShow(S, seed) {
 
   // ---- 瓦の台（段階 3）----
   for (const bx of [TX - TW / 2 - 0.5, TX + TW / 2 - 6.5]) {
-    const p = add({ g: 'stand', x: bx + 3.5, y: (TB + GY) / 2, poly: box(7, GY - TB), col: '#948a7e', edge: '#5e564c', tb: T(3, 0.97 + rr(0, 0.1)),
+    const p = add({ g: 'stand', x: bx + 3.5, y: (TB + GY) / 2, poly: box(7, GY - TB), col: '#b3a99a', edge: '#6e6658', deco: 'stone', tb: T(3, 0.97 + rr(0, 0.1)),
       vx: rr(-10, 10), vy: rr(-10, 10), w: rr(-1.5, 1.5) });
     p.fy = BY - p.hh; p.tl = landT(p);
   }
@@ -208,7 +298,7 @@ function buildShow(S, seed) {
   for (let x = DL; x < DR - 0.5;) {
     let w = rg(10, 16); if (DR - x - w < 6) w = DR - x;
     const cx = x + w / 2, hole = cx > HX0 && cx < HX1, st = hole ? 3 : 4;
-    const p = add({ g: 'slab', x: cx, y: GY + 5, poly: box(w, 10), col: '#d9a85e', edge: '#7a5a2a', tb: hole ? T(3, 0.95 + rr(0, 0.25)) : T(4, 1.75 + rr(0, 0.3)),
+    const p = add({ g: 'slab', x: cx, y: GY + 5, poly: box(w, 10), col: '#e0b068', edge: '#8a6a3a', deco: 'floor', tb: hole ? T(3, 0.95 + rr(0, 0.25)) : T(4, 1.75 + rr(0, 0.3)),
       vx: (cx - KX) * 0.3 + rr(-10, 10), vy: hole ? rr(-20, 30) : -rr(10, 60), w: rr(-2, 2) });
     p.fy = BY - p.hh; p.tl = landT(p);
     x += w;
@@ -221,21 +311,22 @@ function buildShow(S, seed) {
   const dojoFly = (p, vx, vy, w) => { p.vx = vx; p.vy = vy; p.w = w; settle(p, 4); return p; };
   for (let c = 0; c < 6; c++) for (let r = 0; r < 2; r++) {     // 奥の壁
     const cw = (DR - DL) / 6, cx = DL + cw * (c + 0.5), cy = 8 + 33 + 66 * r;
-    dojoFly(add({ g: 'dojo', idx: 0, x: cx, y: cy, poly: box(cw, 66), col: (c + r) % 2 ? '#efdfba' : '#ecdcb4', edge: '#d8c696', lay: 2, tb: dtb() }),
-      (cx - KX) * 0.8 + rr(-20, 20), -rr(30, 150), rr(-2, 2));
+    const col = r === 0 ? ((c + r) % 2 ? '#fbf1d6' : '#f8edcf') : ((c + r) % 2 ? '#ebc98c' : '#e6c384');
+    dojoFly(add({ g: 'dojo', idx: 0, x: cx, y: cy, poly: box(cw, 66), col, edge: col, lay: 2, tb: dtb(), deco: r === 1 ? 'planks' : ['window', 'plaque', 'scroll', 'shrine', 'window', 'window'][c] }),
+      (cx - KX) * 0.45 + rr(-14, 14), -rr(30, 150), rr(-2, 2));
   }
   for (const x of [-60, -26, 8, 42, 76, 110, 144]) {            // 柱
     dojoFly(add({ g: 'dojo', x, y: 74, poly: box(3.2, 132), col: '#8a5a2e', edge: '#6e4521', lay: 2, tb: dtb() }),
-      (x - KX) * 0.4 + rr(-15, 15), -rr(10, 60), rr(-4, 4));
+      (x - KX) * 0.25 + rr(-10, 10), -rr(10, 60), rr(-4, 4));
   }
   for (let n = 0; n < 4; n++) {                                  // 長押（はり）
     const bw = (DR - DL) / 4, cx = DL + bw * (n + 0.5);
-    dojoFly(add({ g: 'dojo', x: cx, y: 45.2, poly: box(bw, 2.4), col: '#6e4521', lay: 2, tb: dtb() }), (cx - KX) * 0.5 + rr(-15, 15), -rr(10, 70), rr(-2, 2));
+    dojoFly(add({ g: 'dojo', x: cx, y: 45.2, poly: box(bw, 2.4), col: '#6e4521', lay: 2, tb: dtb() }), (cx - KX) * 0.3 + rr(-10, 10), -rr(10, 70), rr(-2, 2));
   }
   for (const sd of [-1, 1]) for (let n = 0; n < 3; n++) {        // 外の壁
     const cx = sd < 0 ? DL - 2.5 : DR + 2.5;
     dojoFly(add({ g: 'dojo', x: cx, y: 8 + 22 + 44 * n, poly: box(5, 44), col: '#b98a52', edge: '#6e4521', lay: 4, tb: dtb() }),
-      sd * rr(40, 90), -rr(20, 100), sd * rr(1, 4));
+      sd * rr(18, 38), -rr(20, 100), sd * rr(1, 4));
   }
   const rx = []; for (let n = 0; n <= 8; n++) rx.push(-92 + (182 + 92) * n / 8);
   const rtop = x => (x <= -30 ? lerp(12, -42, (x + 92) / 62) : x >= 120 ? lerp(-42, 12, (x - 120) / 62) : -42);
@@ -243,7 +334,7 @@ function buildShow(S, seed) {
     const a = rx[n], b = rx[n + 1], cx = (a + b) / 2, ymin = Math.min(rtop(a), rtop(b)), cy = (ymin + 12) / 2;
     dojoFly(add({ g: 'dojo', x: cx, y: cy, poly: [a - cx, rtop(a) - cy, b - cx, rtop(b) - cy, b - cx, 12 - cy, a - cx, 12 - cy],
       col: n % 2 ? '#c0573f' : '#b5503c', edge: '#8a3a2a', lay: 4, tb: T(4, 1.65 + rr(0, 0.12)) }),
-      (cx - 45) * 0.9 + rr(-30, 30), -rr(200, 260), rr(-4, 4) + (cx < 45 ? -1 : 1));
+      (cx - 45) * 0.25 + rr(-14, 14), -rr(200, 260), rr(-4, 4) + (cx < 45 ? -1 : 1));
   }
   if (S >= 4) { shake(1.7, 12, 0.8); flash(1.7, 0.25); cue(1.65, 'whoosh'); cue(1.8, 'collapse'); cue(1.9, 'rumble');
     for (let n = 0; n < 4; n++) puff(-60 + n * 70, GY - 8, 14, 46, 1.9 + n * 0.06, 0.8, '#f5ead0'); }
@@ -259,8 +350,9 @@ function buildShow(S, seed) {
     const sd = h.x1 < 45 ? -1 : 1, w = h.x1 - h.x0, mid = (h.x0 + h.x1) / 2, tb = toppleT(h.o);
     const tilt = { kind: 'tilt', tb, px: sd < 0 ? h.x0 : h.x1, py: GY, ang: sd * 1.55, dur: 0.42, lay: 1 };
     add(Object.assign({ g: 'house', x: mid, y: GY - h.h / 2, poly: box(w, h.h), col: h.c, edge: '#b49470',
-      dec: [[-w * 0.22, -h.h * 0.1, w * 0.26, h.h * 0.24, '#bfe6ff'], [w * 0.2, h.h * 0.12, w * 0.18, h.h * 0.38, '#a0703c']] }, tilt));
-    add(Object.assign({ g: 'house', x: mid, y: GY - h.h - 6, poly: [-w / 2 - 4, 6, 0, -8, w / 2 + 4, 6], col: h.r, edge: '#8a3a2a' }, tilt));
+      dec: houseDec(w, h.h) }, tilt));
+    add(Object.assign({ g: 'house', x: mid, y: GY - h.h - 6, poly: [-w / 2 - 4, 6, 0, -8, w / 2 + 4, 6], col: h.r, edge: '#8a3a2a',
+      dec: [[w * 0.16, -6.5, 3.6, 6, '#a8584a'], [-w * 0.5, 4.2, w + 0, 1.6, '#00000018']] }, tilt));
     puff(tilt.px + sd * 22, GY - 6, 5, 22, isFinite(tb) ? tb + 0.38 : Infinity, 0.6, '#f5ead0');
     if (isFinite(tb)) { cue(tb + 0.4, 'topple'); shake(tb + 0.4, 5, 0.25); }
   }
@@ -272,14 +364,21 @@ function buildShow(S, seed) {
   if (S >= 5) { shake(2.3, 4, 0.9); cue(2.25, 'rumble'); }
 
   // ---- 裏山（段階 6）：真っ二つ ----
-  const half = (pts, pvx, ang, col) => {
+  const half = (pts, pvx, ang, col, cap, trees) => {
     let x0 = 1e9, x1 = -1e9, y0 = 1e9, y1 = -1e9;
     for (let i = 0; i < pts.length; i += 2) { x0 = Math.min(x0, pts[i]); x1 = Math.max(x1, pts[i]); y0 = Math.min(y0, pts[i + 1]); y1 = Math.max(y1, pts[i + 1]); }
     const cx = (x0 + x1) / 2, cy = (y0 + y1) / 2, poly = [];
     for (let i = 0; i < pts.length; i += 2) poly.push(pts[i] - cx, pts[i + 1] - cy);
-    add({ g: 'mountain', kind: 'tilt', x: cx, y: cy, poly, col, edge: '#6fa08a', lay: 0, tb: T(6, 2.8), px: pvx, py: GY, ang, dur: 0.55, out: true });
+    const decp = [];
+    const rel = a => { const q = []; for (let i = 0; i < a.length; i += 2) q.push(a[i] - cx, a[i + 1] - cy); return q; };
+    decp.push({ col: '#f4fbff', pts: rel(cap) });
+    for (const [tx, ty, ts] of trees) decp.push({ col: '#5fae85', pts: rel([tx - ts, ty, tx, ty - ts * 2.2, tx + ts, ty]) });
+    add({ g: 'mountain', kind: 'tilt', x: cx, y: cy, poly, col, edge: '#6fa08a', lay: 0, tb: T(6, 2.8), px: pvx, py: GY, ang, dur: 0.55, out: true, decp });
   };
-  half(MT_L, -260, -0.17, '#8dc3a6'); half(MT_R, 350, 0.17, '#9ccfb0');
+  half(MT_L, -260, -0.17, '#8dc3a6', [45, -210, 10, -185, 17, -178, 25, -183, 32, -172, 40, -178, 45, -164],
+    [[-200, 125, 8], [-170, 130, 9], [-130, 118, 8], [-95, 128, 9], [-60, 120, 8], [-20, 130, 9], [20, 122, 8]]);
+  half(MT_R, 350, 0.17, '#9ccfb0', [45, -210, 80, -170, 72, -163, 63, -170, 56, -160, 50, -166, 45, -158],
+    [[70, 128, 9], [105, 120, 8], [140, 130, 9], [180, 118, 8], [220, 128, 9], [270, 122, 8], [310, 130, 9]]);
   for (let n = 0; n < 8; n++) {                                  // 割れ目から飛ぶ岩
     const s = rg(7, 15), sx = sgn();
     const p = add({ g: 'rock', x: 45 + rg(-25, 25), y: rg(-190, -120), poly: [-s, s * 0.6, 0, -s, s, s * 0.6], col: n % 2 ? '#8a9a8a' : '#9aaa9a', edge: '#6a7a6a', lay: 0, tb: T(6, 2.85 + rr(0, 0.2)),
@@ -310,10 +409,19 @@ function buildShow(S, seed) {
     if (u < 0.96 && !(xr > PX - PW / 2 - 4 && xr < PX + PW / 2 + 4)) p.fade = t7 + 0.1 + (1 - u) * 0.3;
   }
 
+  // ---- 反応の音（門下生・住人）----
+  if (S === 0) cue(0.6, 'wah');
+  if (S === 1) { cue(0.45, 'clap'); cue(0.9, 'clap'); }
+  if (S === 2) cue(0.7, 'crowd');
+  if (S >= 3) { cue(0.45, 'crowd'); cue(FLEE_T, 'run'); }
+  if (S >= 4) cue(1.8, 'crowd');
+  if (S >= 5) cue(2.7, 'crowd');
+  if (S >= 7) cue(3.5, 'gong');
+
   // ---- 大きな文字・音の合図 ----
   const caps = [];
   const k0 = S >= 2 ? 2 : S;
   for (let k = k0; k <= S; k++) caps.push({ t: CFG.showCaps[k][1], text: CFG.showCaps[k][0] });
   cues.sort((a, b) => a.t - b.t);
-  return { stage: S, seed, dur: CFG.showSecs[S], pieces: P, cues, shakes, flashes, caps };
+  return { stage: S, seed, dur: CFG.showSecs[S], pieces: P, cues, shakes, flashes, caps, bubbles: bubblesFor(S) };
 }

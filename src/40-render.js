@@ -4,6 +4,7 @@ const cv = $('cv'), cx = cv.getContext('2d');
 let W = 0, H = 0, DPR = 1;
 let CAMV = viewFor(BASE_CAM, 390, 844);   // 今のカメラが見ている世界の範囲
 let nowT = 0;
+const RESL = { on: false, x: 0, y: 0, w: 0, h: 0, portrait: true };   // 認定証の置き場所（60-ui.js が測って入れる）
 const IDLE = buildShow(0, CFG.seed);      // 連打の間の世界（壊れる前の姿）
 
 function resize() {
@@ -64,28 +65,34 @@ function updateVisual(dt) {
   for (let i = rings.length - 1; i >= 0; i--) { rings[i].life += dt; if (rings[i].life >= rings[i].max) rings.splice(i, 1); }
 }
 
-function twoBone(sx, sy, tx, ty, l1, l2) {
+function twoBone(sx, sy, tx, ty, l1, l2, flip) {
   const dx = tx - sx, dy = ty - sy, d0 = Math.hypot(dx, dy) || 0.01;
   const d = clamp(d0, Math.abs(l1 - l2) + 0.1, l1 + l2 - 0.05);
   const ux = dx / d0, uy = dy / d0;
-  const a = (l1 * l1 - l2 * l2 + d * d) / (2 * d), h = Math.sqrt(Math.max(0, l1 * l1 - a * a));
+  const a = (l1 * l1 - l2 * l2 + d * d) / (2 * d), h = Math.sqrt(Math.max(0, l1 * l1 - a * a)) * (flip ? -1 : 1);
   return { ex: sx + ux * a + uy * h, ey: sy + uy * a - ux * h, hx: sx + ux * d, hy: sy + uy * d };
 }
 
-// ---- 空・雲・裏山の芯・住人 ----
+// ---- 空・雲・太陽・裏山の芯 ----
 const CLOUDS = [[-200, -110, 1], [110, -95, 1.3], [300, -150, 0.9], [-60, -190, 1.1], [-330, -40, 1.2], [420, -60, 1]];
-const RESIDENTS = [[-290, '#ff8a5c'], [-275, '#5c9cff'], [350, '#f2c94c'], [365, '#7bd389']];
 
 function drawSky(v) {
   const c = cx;
   const g = c.createLinearGradient(0, v.y0, 0, GY);
-  g.addColorStop(0, '#86cdf0'); g.addColorStop(1, '#eaf8ff');
+  g.addColorStop(0, '#7cc8f2'); g.addColorStop(1, '#f2fbff');
   c.fillStyle = g; c.fillRect(v.x0 - 5, v.y0 - 5, v.x1 - v.x0 + 10, GY - v.y0 + 6);
-  c.fillStyle = '#e6d3b2'; c.fillRect(v.x0 - 5, GY - 1, v.x1 - v.x0 + 10, v.y1 - GY + 6);   // 穴の向こう側（クレーターの奥の壁）
-  c.fillStyle = '#ffffffcc';
+  c.fillStyle = '#ead9bb'; c.fillRect(v.x0 - 5, GY - 1, v.x1 - v.x0 + 10, v.y1 - GY + 6);   // 穴の向こう側（クレーターの奥の壁）
+  // 太陽
+  const sg = c.createRadialGradient(330, -150, 6, 330, -150, 70);
+  sg.addColorStop(0, 'rgba(255,244,170,0.95)'); sg.addColorStop(0.4, 'rgba(255,236,140,0.4)'); sg.addColorStop(1, 'rgba(255,236,140,0)');
+  c.fillStyle = sg; c.beginPath(); c.arc(330, -150, 70, 0, 6.283); c.fill();
+  c.fillStyle = '#ffe98a'; c.beginPath(); c.arc(330, -150, 17, 0, 6.283); c.fill();
+  // 雲
+  c.fillStyle = '#ffffffd8';
   for (const [x, y, s] of CLOUDS) {
     c.beginPath();
     c.ellipse(x, y, 34 * s, 9 * s, 0, 0, 6.283); c.ellipse(x - 20 * s, y + 3 * s, 20 * s, 7 * s, 0, 0, 6.283); c.ellipse(x + 22 * s, y + 2 * s, 24 * s, 8 * s, 0, 0, 6.283);
+    c.ellipse(x - 6 * s, y - 6 * s, 16 * s, 8 * s, 0, 0, 6.283); c.ellipse(x + 12 * s, y - 4 * s, 12 * s, 7 * s, 0, 0, 6.283);
     c.fill();
   }
   // 裏山の芯（山が割れた隙間から見える暗い部分）
@@ -94,20 +101,6 @@ function drawSky(v) {
   for (let i = 2; i < MT_L.length - 2; i += 2) c.lineTo(MT_L[i], MT_L[i + 1]);
   for (let i = 2; i < MT_R.length - 2; i += 2) c.lineTo(MT_R[i], MT_R[i + 1]);
   c.closePath(); c.fill();
-}
-
-// 遠くから見ている住人（避難済み。けがはしない。万歳して小さく跳ねている）
-function drawResidents(t) {
-  const c = cx;
-  c.lineCap = 'round';
-  for (let i = 0; i < RESIDENTS.length; i++) {
-    const x = RESIDENTS[i][0], hop = Math.abs(Math.sin(t * 6 + i * 1.7)) * 1.5;
-    c.strokeStyle = RESIDENTS[i][1]; c.lineWidth = 3.2;
-    c.beginPath(); c.moveTo(x, GY - 6 - hop); c.lineTo(x, GY - 14 - hop); c.stroke();
-    c.lineWidth = 1.4; c.beginPath(); c.moveTo(x - 4, GY - 16 - hop); c.lineTo(x, GY - 12 - hop); c.lineTo(x + 4, GY - 16 - hop); c.stroke();
-    c.beginPath(); c.moveTo(x - 1.5, GY - hop); c.lineTo(x, GY - 6 - hop); c.lineTo(x + 1.5, GY - hop); c.stroke();
-    c.fillStyle = '#f6cfa6'; c.beginPath(); c.arc(x, GY - 17.5 - hop, 2.4, 0, 6.283); c.fill();
-  }
 }
 
 // 地面の断面：地層の帯、道場の下の階、クレーター（足場の柱だけ残る）
@@ -131,14 +124,17 @@ function drawGround(v, cp) {
     const y0 = STRATA[i][0], y1 = i + 1 < STRATA.length ? STRATA[i + 1][0] : yB;
     c.fillStyle = STRATA[i][1]; c.fillRect(xL, y0, xR - xL, Math.max(y1, y0 + 1) - y0 + 0.5);
   }
+  drawStrataArt(v);
   // 下の階（道場の真下の部屋）
-  c.fillStyle = '#a98d68'; c.fillRect(DL, GY, DR - DL, BY - GY);
+  c.fillStyle = '#b89a72'; c.fillRect(DL, GY, DR - DL, BY - GY);
+  c.fillStyle = '#d8c096'; c.fillRect(DL, GY, DR - DL, 3);
   c.fillStyle = '#8f7452';
   for (let x = DL + 17; x < DR; x += 34) c.fillRect(x - 1, GY, 2, BY - GY);
   c.fillRect(DL, 176, DR - DL, 1.6);
-  c.fillStyle = '#d3a35a'; c.fillRect(DL, BY, DR - DL, 9);
-  c.fillStyle = '#8f6a30'; c.fillRect(DL, BY, DR - DL, 1.2);
+  c.fillStyle = '#e0b068'; c.fillRect(DL, BY, DR - DL, 9);
+  c.fillStyle = '#9a7438'; c.fillRect(DL, BY, DR - DL, 1.2);
   c.restore();
+  drawGrass(v, cp);
 }
 
 // 破片・建物・山など（lay：奥から手前）。時刻 tp の姿勢は 30-show.js の poseAt
@@ -164,8 +160,10 @@ function drawPieces(sh, lay, tp, jit) {
       c.beginPath(); c.moveTo(q[0], q[1]);
       for (let i = 2; i < q.length; i += 2) c.lineTo(q[i], q[i + 1]);
       c.closePath(); c.fillStyle = p.col; c.fill();
-      if (p.edge) { c.strokeStyle = p.edge; c.lineWidth = 0.35; c.stroke(); }
+      if (p.edge) { c.strokeStyle = p.edge; c.lineWidth = Math.min(1.1, Math.max(0.35, 0.8 / CAMV.k)); c.stroke(); }
       if (p.dec) for (const d of p.dec) { c.fillStyle = d[4]; c.fillRect(d[0], d[1], d[2], d[3]); }
+      if (p.decp) for (const d of p.decp) { c.fillStyle = d.col; c.beginPath(); c.moveTo(d.pts[0], d.pts[1]); for (let i = 2; i < d.pts.length; i += 2) c.lineTo(d.pts[i], d.pts[i + 1]); c.closePath(); c.fill(); }
+      if (p.deco) { const f = DECO[p.deco]; if (f) f(c, p); }
       if (p.ck && tp >= p.ckT && tp < p.tb) {   // ひび
         c.strokeStyle = '#141a22'; c.lineWidth = 0.4; c.beginPath(); c.moveTo(p.ck[0], p.ck[1]);
         for (let i = 2; i < p.ck.length; i += 2) c.lineTo(p.ck[i], p.ck[i + 1]);
@@ -207,48 +205,53 @@ function karaView() {
   const m = Game.mode, sh = Game.show;
   if ((m === 'show' || m === 'over') && sh) {
     const t = m === 'show' ? Game.showT : sh.dur, k = karaAt(sh, t);
-    return { dx: k.dx, dy: k.dy, tx: k.tx, ty: k.ty, face: k.face, t, by: 0, pain: sh.stage === 0 };
+    return { dx: k.dx, dy: k.dy, tx: k.tx, ty: k.ty, face: k.face, t, by: 0, pain: sh.stage === 0, flip: false };
   }
   let tx = KX + 11, ty = 76 + (m === 'play' ? -V.bounce * 1.5 : 0);
-  if (m === 'title') { tx = KX + 11; ty = 98; }
+  if (m === 'title') { tx = KX + 27; ty = 99; }   // 構え（ひじを下げて拳を前に）
   if (m === 'ready') { tx = KX + 12; ty = 84; }
   if (m === 'finish') {
     const e = Math.pow(clamp(Game.finT / 0.12, 0, 1), 2);
     tx = lerp(KX + 11, 61, e); ty = lerp(76, TB - CFG.tiles * TP - 3, e);
   }
   const by = V.bounce * 1.2 + (m === 'play' ? Math.sin(nowT * 30) * 0.15 * Math.min(1, Game.count / 20) : 0);
-  return { dx: 0, dy: 0, tx, ty, face: m === 'play' || m === 'finish' ? 'shout' : 'calm', t: nowT, by, pain: false };
+  return { dx: 0, dy: 0, tx, ty, face: m === 'play' || m === 'finish' ? 'shout' : m === 'title' ? 'serious' : 'calm', t: nowT, by, pain: false, flip: m === 'title' };
 }
 
 function drawKarateka() {
   const c = cx, K = karaView();
   const skin = mix('#f6cfa6', '#ff7a5a', clamp(Game.count / CFG.topCount, 0, 1));
+  const kz = CAMV.k, sc = haloStrength() > 0 ? 1 + 0.28 * clamp((1.1 - kz) / 0.6, 0, 1) : 1;   // 引いたとき少し大きく
+  const ow = Math.min(2.2, Math.max(0.7, 1.1 / kz));                                          // 縁取りの太さ（引いても見える）
   c.save(); c.translate(K.dx, K.dy + K.by);
+  if (sc > 1) { c.translate(KX + 1, GY); c.scale(sc, sc); c.translate(-(KX + 1), -GY); }
+  const hs = haloStrength();
+  if (hs > 0.05) { c.shadowColor = 'rgba(255,255,255,' + 0.95 * hs + ')'; c.shadowBlur = 9 * DPR * hs; }
   // 影
   c.save(); c.translate(0, -K.by); c.fillStyle = '#0003'; c.beginPath(); c.ellipse(KX + 1, GY + 1.5, 15, 2.6, 0, 0, 6.283); c.fill(); c.restore();
   c.lineCap = 'round'; c.lineJoin = 'round';
-  const white = '#fbfbf6', edge = '#a9a392';
+  const white = '#fffdf6', edge = '#7a604a';
+  const limb = (w, pts) => {
+    for (const [lw, col] of [[w + ow * 2, edge], [w, white]]) {
+      c.strokeStyle = col; c.lineWidth = lw; c.beginPath(); c.moveTo(pts[0], pts[1]);
+      for (let i = 2; i < pts.length; i += 2) c.lineTo(pts[i], pts[i + 1]);
+      c.stroke();
+    }
+  };
   // 脚（馬立ち）
-  c.strokeStyle = edge; c.lineWidth = 8.4; c.beginPath(); c.moveTo(KX - 3, 122); c.lineTo(KX - 10, GY - 1); c.moveTo(KX + 5, 122); c.lineTo(KX + 12, GY - 1); c.stroke();
-  c.strokeStyle = white; c.lineWidth = 7; c.beginPath(); c.moveTo(KX - 3, 122); c.lineTo(KX - 10, GY - 1); c.moveTo(KX + 5, 122); c.lineTo(KX + 12, GY - 1); c.stroke();
+  limb(7, [KX - 3, 122, KX - 10, GY - 1]); limb(7, [KX + 5, 122, KX + 12, GY - 1]);
   c.fillStyle = skin; c.beginPath(); c.ellipse(KX - 11, GY - 0.3, 4, 1.6, 0, 0, 6.283); c.ellipse(KX + 13, GY - 0.3, 4, 1.6, 0, 0, 6.283); c.fill();
   // 後ろの腕（ふだんは腰に。痛いときは手首を押さえる）
-  if (K.pain) {
-    const bk = twoBone(KX - 5, 105, K.tx - 1, K.ty + 2, 20, 20);
-    c.strokeStyle = edge; c.lineWidth = 6.6; c.beginPath(); c.moveTo(KX - 5, 105); c.lineTo(bk.ex, bk.ey); c.lineTo(bk.hx, bk.hy); c.stroke();
-    c.strokeStyle = white; c.lineWidth = 5.4; c.beginPath(); c.moveTo(KX - 5, 105); c.lineTo(bk.ex, bk.ey); c.lineTo(bk.hx, bk.hy); c.stroke();
-  } else {
-    c.strokeStyle = edge; c.lineWidth = 6.6; c.beginPath(); c.moveTo(KX - 5, 105); c.lineTo(KX - 11, 114); c.lineTo(KX - 5, 118); c.stroke();
-    c.strokeStyle = white; c.lineWidth = 5.4; c.beginPath(); c.moveTo(KX - 5, 105); c.lineTo(KX - 11, 114); c.lineTo(KX - 5, 118); c.stroke();
-  }
+  if (K.pain) { const bk = twoBone(KX - 5, 105, K.tx - 1, K.ty + 2, 20, 20); limb(5.4, [KX - 5, 105, bk.ex, bk.ey, bk.hx, bk.hy]); }
+  else limb(5.4, [KX - 5, 105, KX - 11, 114, KX - 5, 118]);
   // 胴
-  c.fillStyle = white; c.strokeStyle = edge; c.lineWidth = 0.7;
+  c.fillStyle = white; c.strokeStyle = edge; c.lineWidth = Math.max(0.7, ow * 0.7);
   rr(c, KX - 8, 99, 17, 25, 4.5); c.fill(); c.stroke();
   c.strokeStyle = edge; c.lineWidth = 0.6; c.beginPath(); c.moveTo(KX - 1, 99); c.lineTo(KX + 4, 110); c.lineTo(KX + 7, 99); c.stroke();   // 襟
   c.fillStyle = '#26262e'; c.fillRect(KX - 8.3, 118.5, 17.6, 3.2);   // 黒帯
   // 頭
   const hx = KX + 1.5, hy = 91;
-  c.fillStyle = skin; c.strokeStyle = '#b98a62'; c.lineWidth = 0.6;
+  c.fillStyle = skin; c.strokeStyle = edge; c.lineWidth = Math.max(0.7, ow * 0.7);
   c.beginPath(); c.arc(hx, hy, 7, 0, 6.283); c.fill(); c.stroke();
   c.fillStyle = '#26262e'; c.beginPath(); c.arc(hx - 0.6, hy - 1.2, 7.3, Math.PI * 1.02, Math.PI * 2.0); c.fill();
   c.fillStyle = '#fff'; c.fillRect(hx - 7.2, hy - 2.6, 14.4, 2.2);   // はちまき
@@ -273,11 +276,9 @@ function drawKarateka() {
     else { c.strokeStyle = '#7a1f1a'; c.lineWidth = 0.7; c.beginPath(); c.moveTo(hx + 1.8, hy + 4.3); c.lineTo(hx + 4.6, hy + 4.3); c.stroke(); }
   }
   // 前の腕（二関節）
-  const sx = KX + 3, sy = 104;
-  const arm = twoBone(sx, sy, K.tx, K.ty, 22, 22);
-  c.strokeStyle = edge; c.lineWidth = 6.6; c.beginPath(); c.moveTo(sx, sy); c.lineTo(arm.ex, arm.ey); c.lineTo(arm.hx, arm.hy); c.stroke();
-  c.strokeStyle = white; c.lineWidth = 5.4; c.beginPath(); c.moveTo(sx, sy); c.lineTo(arm.ex, arm.ey); c.lineTo(arm.hx, arm.hy); c.stroke();
-  c.fillStyle = skin; c.strokeStyle = '#b98a62'; c.lineWidth = 0.5;
+  const arm = twoBone(KX + 3, 104, K.tx, K.ty, 22, 22, K.flip);
+  limb(5.4, [KX + 3, 104, arm.ex, arm.ey, arm.hx, arm.hy]);
+  c.fillStyle = skin; c.strokeStyle = edge; c.lineWidth = Math.max(0.5, ow * 0.6);
   c.beginPath(); c.arc(arm.hx, arm.hy, 3.4, 0, 6.283); c.fill(); c.stroke();
   c.restore();
 }
@@ -297,24 +298,37 @@ function render() {
   const inShow = !!Game.show && (m === 'show' || m === 'over');
   const ts = inShow ? (m === 'show' ? Game.showT : sh.dur) : 0;                                   // カメラ・演出の時刻
   const tp = inShow ? (m === 'show' ? Game.showT : sh.dur + Math.min(Game.overT, 3)) : 0;          // 破片の時刻（結果のあとも着地まで進む）
-  const cam = inShow ? camAt(sh.stage, ts) : BASE_CAM, shk = inShow ? shakeAt(sh, ts, { x: 0, y: 0 }) : { x: 0, y: 0 };
+  let cam = inShow ? camAt(sh.stage, ts) : BASE_CAM;
+  const shk = inShow ? shakeAt(sh, ts, { x: 0, y: 0 }) : { x: 0, y: 0 };
+  if (m === 'over' && RESL.on) {          // 認定証が出るとき、絵をずらして本人が認定証にかぶらないように
+    const u = smooth((Game.overT - CFG.certDelay) / 0.55);
+    if (u > 0) {
+      const k0 = viewFor(cam, W, H).k, sft = resultShift(sh.stage, cam, W, H, RESL);
+      cam = { cx: cam.cx - sft.x * u / k0, cy: cam.cy - sft.y * u / k0, w: cam.w, h: cam.h };
+    }
+  }
   const v = CAMV = viewFor(cam, W, H);
   c.setTransform(1, 0, 0, 1, 0, 0);
   c.clearRect(0, 0, cv.width, cv.height);
   c.setTransform(DPR * v.k, 0, 0, DPR * v.k, DPR * (W / 2 - cam.cx * v.k + shk.x), DPR * (H / 2 - cam.cy * v.k + shk.y));
   const jit = !inShow;
   drawSky(v);
+  drawHills(v, tp);
   drawPieces(sh, 0, tp, jit);       // 裏山
-  drawResidents(nowT);
+  drawResidents(v);
   drawPieces(sh, 1, tp, jit);       // 家・電柱
+  drawWires(sh, tp, v);
   drawPieces(sh, 2, tp, jit);       // 道場の奥の壁・柱
   drawGround(v, craterAt(sh.stage, ts));
+  drawCast(v, sh, inShow, ts);
   drawAura();
+  drawHalo(karaView());
   drawKarateka();
   drawPieces(sh, 3, tp, jit);       // 瓦・台・床
   drawPieces(sh, 4, tp, jit);       // 屋根・外の壁
   drawPieces(sh, 5, tp, jit);       // 砂ぼこり・土
   drawSparks();
+  if (inShow) drawBubbles(v, sh, ts);
   const f = Math.min(0.85, V.flash + (inShow ? flashAt(sh, ts) : 0));
   if (f > 0.01) { c.setTransform(1, 0, 0, 1, 0, 0); c.fillStyle = 'rgba(255,255,255,' + f + ')'; c.fillRect(0, 0, cv.width, cv.height); }
 }

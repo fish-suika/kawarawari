@@ -4,7 +4,9 @@ const CFG = {
   readySecs: 0.6,        // 「はじめ」から連打の開始まで
   duration: 5,           // 連打の長さ（秒）。「はじめ」のあとに固定
   finishSecs: 0.16,      // 「せいっ」で腕を振り下ろして瓦に届くまで。そのあと見せ場
-  retryWait: 0.5,        // 結果が出てから再挑戦を受け付けるまで（誤タップ防止）
+  retryWait: 1.0,        // 結果が出てから再挑戦を受け付けるまで（誤タップ防止。認定証を見せるので長め）
+  certDelay: 0.6,        // 見せ場のあと、認定証を出すまで（見せ場の最後の画面を見せる時間）
+  shareUrl: 'https://fish-suika.github.io/kawarawari/',
   maxPerSec: 25,         // 1秒に数える連打の上限（直近1秒の窓）
   tiles: 20,             // 積む瓦の枚数
 

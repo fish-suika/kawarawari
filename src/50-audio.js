@@ -2,6 +2,14 @@
 const Snd = (() => {
   let ac = null, master = null, noiseBuf = null, bus = null;   // bus：見せ場の音の出口（早送りで一気に止められる）
   const recent = [];   // 直近に鳴らした太鼓の時刻（重なりすぎの間引きに使う）
+  const live = [];     // 鳴っている音の終わる時刻（同時に鳴りすぎたら新しい音を間引く）
+  const MAX_VOICES = 36;
+  function room(t, dur) {
+    while (live.length && live[0] < t) live.shift();
+    if (live.length >= MAX_VOICES) return false;
+    live.push(t + dur); live.sort((x, y) => x - y);
+    return true;
+  }
 
   function init() {
     if (!ac) {
@@ -26,6 +34,7 @@ const Snd = (() => {
   function tone(f, t0, dur, o) {
     if (!ac) return;
     o = o || {};
+    if (!room(t0, dur)) return;
     const osc = ac.createOscillator(), g = ac.createGain();
     osc.type = o.type || 'sine';
     osc.frequency.setValueAtTime(f, t0);
@@ -38,7 +47,7 @@ const Snd = (() => {
     osc.start(t0); osc.stop(t0 + dur + 0.05);
   }
   function noise(t0, dur, o) {
-    if (!ac) return;
+    if (!ac || !room(t0, dur)) return;
     const src = ac.createBufferSource(); src.buffer = noiseBuf; src.loop = true;
     const fl = ac.createBiquadFilter(); fl.type = o.type || 'bandpass';
     fl.frequency.setValueAtTime(o.f, t0); fl.Q.value = o.q || 1;
@@ -131,11 +140,40 @@ const Snd = (() => {
       } else if (name === 'crash') {
         noise(t, 0.5, { f: 1800, f2: 300, q: 0.7, gain: 0.26 });
         tone(110, t, 0.4, { gain: 0.3, f2: 40 });
+      } else if (name === 'wah') {       // 失敗：しょんぼり（ぼよーん）
+        tone(392, t, 0.55, { type: 'triangle', gain: 0.16, f2: 196 });
+        tone(370, t + 0.02, 0.55, { type: 'triangle', gain: 0.08, f2: 180 });
+      } else if (name === 'clap') {      // まばらな拍手：パチ…
+        noise(t, 0.05, { type: 'highpass', f: 2200, q: 0.8, gain: 0.2 });
+        noise(t + 0.18, 0.05, { type: 'highpass', f: 2600, q: 0.8, gain: 0.14 });
+        noise(t + 0.33, 0.05, { type: 'highpass', f: 2000, q: 0.8, gain: 0.1 });
+      } else if (name === 'crowd') {     // どよめき：おおお
+        noise(t, 0.7, { f: 520, f2: 760, q: 2.2, gain: 0.2 });
+        noise(t + 0.03, 0.7, { f: 900, f2: 1250, q: 2.6, gain: 0.12 });
+        noise(t + 0.06, 0.6, { f: 330, f2: 420, q: 2, gain: 0.14 });
+      } else if (name === 'run') {       // 逃げる足音：タタタタ
+        for (let i = 0; i < 6; i++) noise(t + i * 0.09, 0.04, { type: 'lowpass', f: 700, q: 0.8, gain: 0.12 });
+      } else if (name === 'gong') {      // 破門：ゴォーン
+        tone(98, t, 1.8, { gain: 0.3, f2: 92, attack: 0.01 });
+        tone(196, t, 1.5, { type: 'triangle', gain: 0.14, f2: 190, attack: 0.01 });
+        tone(312, t, 1.1, { type: 'sine', gain: 0.08, attack: 0.01 });
+        noise(t, 0.12, { f: 1800, q: 0.9, gain: 0.12 });
       } else if (name === 'crater') {    // どーん
         tone(72, t, 1.1, { gain: 0.5, f2: 26, attack: 0.01 });
         noise(t, 1.2, { type: 'lowpass', f: 1000, f2: 70, q: 0.7, gain: 0.4 });
         noise(t, 0.3, { f: 2500, f2: 400, q: 0.7, gain: 0.2 });
       }
+    },
+    // 認定証が出る音：太鼓のどん＋段階が高いほど明るい鈴（破門はゴング、出直しはしょんぼり）
+    cert(stage) {
+      if (!ac) return; const t = now();
+      if (stage >= 7) { this.cue('gong'); return; }
+      if (stage === 0) return;
+      tone(110, t, 0.3, { gain: 0.38, f2: 55 });
+      noise(t, 0.05, { f: 1400, q: 0.9, gain: 0.14 });
+      const f = 523 * Math.pow(2, stage * 1.5 / 12);
+      tone(f, t + 0.12, 0.5, { type: 'triangle', gain: 0.09 });
+      tone(f * 1.5, t + 0.2, 0.5, { type: 'triangle', gain: 0.07 });
     },
   };
 })();

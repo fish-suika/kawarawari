@@ -5,8 +5,10 @@ cd "$(dirname "$0")"
 cat src/00-head.html \
     src/10-config.js \
     src/20-logic.js \
+    src/25-record.js \
     src/30-show.js \
     src/40-render.js \
+    src/42-art.js \
     src/50-audio.js \
     src/60-ui.js \
     src/90-boot.js \
@@ -17,6 +19,7 @@ cp kawarawari.html index.html   # GitHub Pages はルートの index.html を配
 cat src/verify-head.html \
     src/10-config.js \
     src/20-logic.js \
+    src/25-record.js \
     src/30-show.js \
     src/verify-tests.js \
     src/99-tail.html > verify.html
